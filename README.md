@@ -17,7 +17,7 @@ A security scanning toolkit that runs a ZAP baseline scan, parses findings into 
 ### 1. Clone the repo
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/Gumbeoketch/scrappy-scanner.git
 cd scrappy-scanner
 ```
 
