@@ -3,8 +3,32 @@ import json
 import sys
 import os
 import time
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+except ImportError:
+    print("[!] Missing dependency: google-generativeai")
+    print("[!] Run: pip install -r requirements.txt")
+    print("[!] Or:  pip install google-generativeai")
+    import sys; sys.exit(1)
 from typing import Dict, List
+
+# Load .env file if present (without requiring python-dotenv)
+def _load_dotenv(dotenv_path=".env"):
+    if not os.path.isfile(dotenv_path):
+        return
+    with open(dotenv_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip()
+            # Only set if not already set in the environment
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+_load_dotenv()
 
 def parse_zap_to_sysreptor(zap_json_output):
     zap_data = json.loads(zap_json_output)
