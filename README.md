@@ -42,12 +42,12 @@ Then edit `.env`:
 ```
 GEMINI_API_KEY=your-gemini-api-key-here
 REPTOR_API_KEY=your-reptor-api-key-here
-REPTOR_TEMPLATE_ID=your-template-id-here
+REPTOR_DESIGN_ID=your-template-id-here
 ```
 
 - `GEMINI_API_KEY` — enables AI enrichment of findings in `parser.py`. Get one at [aistudio.google.com](https://aistudio.google.com)
 - `REPTOR_API_KEY` — your SysReptor API key for the `reptor` CLI
-- `REPTOR_TEMPLATE_ID` — the SysReptor report template ID to use when creating projects
+- `REPTOR_DESIGN_ID` — the SysReptor report template ID to use when creating projects
 
 ---
 
