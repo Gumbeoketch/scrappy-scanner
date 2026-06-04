@@ -1,6 +1,16 @@
+# Secrets
 .env
+
+# Python
 .venv/
-*.json
-*.html
 __pycache__/
 *.pyc
+*.pyo
+
+# Scan outputs (generated at runtime)
+scans/
+scan_history.json
+
+# ZAP report files (in root, not templates)
+*.json
+/scans/*.html
