@@ -136,9 +136,14 @@ def run_zap_scan(target_url, output_dir):
     scan_json = output_dir / f"{scan_prefix}.json"
     scan_html = output_dir / f"{scan_prefix}.html"
 
+    # Ensure the output directory is world-writable so the ZAP container
+    # (which runs as uid 1000 inside Docker) can write its output files.
+    output_dir.chmod(0o777)
+
     cmd = [
         'docker', 'run', '--rm',
-        '-v', f"{output_dir.absolute()}:/zap/wrk",
+        '-v', f"{output_dir.absolute()}:/zap/wrk:rw",
+        '--user', 'root',
         'ghcr.io/zaproxy/zaproxy:stable',
         'zap-baseline.py',
         '-t', target_url,
@@ -149,7 +154,7 @@ def run_zap_scan(target_url, output_dir):
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
 
     if not scan_json.exists():
-        raise Exception(f"ZAP scan failed: {result.stderr}")
+        raise Exception(f"ZAP scan failed: {result.stderr or result.stdout}")
 
     return {
         'json_path': scan_json,
