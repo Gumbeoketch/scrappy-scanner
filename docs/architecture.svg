@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 900">
+  <defs>
+    <style>
+      .box { fill: white; stroke: #1a7f5a; stroke-width: 2; }
+      .box-alt { fill: #f5fbf8; stroke: #1a7f5a; stroke-width: 2; }
+      .box-accent { fill: #1a7f5a; }
+      .text { font-family: -apple-system, sans-serif; font-size: 14px; fill: #1c2b22; }
+      .text-white { fill: white; }
+      .text-small { font-size: 12px; fill: #6b7c75; }
+      .text-title { font-size: 16px; font-weight: 600; fill: #1a7f5a; }
+      .arrow { stroke: #1a7f5a; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+      .label { font-size: 11px; fill: #6b7c75; font-style: italic; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#1a7f5a" />
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="400" y="30" text-anchor="middle" class="text-title" style="font-size:20px">
+    Letshego Group Security Scanner Architecture
+  </text>
+
+  <!-- Browser / UI -->
+  <rect x="150" y="60" width="500" height="100" rx="8" class="box"/>
+  <text x="400" y="85" text-anchor="middle" class="text-title">🌐 User Browser (Web UI)</text>
+  <text x="400" y="105" text-anchor="middle" class="text-small">http://localhost:8000</text>
+  <text x="180" y="130" class="text-small">• Scanner Tab: Run scans, configure options</text>
+  <text x="180" y="148" class="text-small">• Dashboard Tab: View org-wide metrics &amp; history</text>
+
+  <!-- Arrow down -->
+  <path d="M 400 160 L 400 190" class="arrow"/>
+
+  <!-- Flask Backend -->
+  <rect x="100" y="200" width="600" height="220" rx="8" class="box-alt"/>
+  <text x="400" y="225" text-anchor="middle" class="text-title">⚙️ Flask Backend (app.py)</text>
+
+  <!-- Scan Engine -->
+  <rect x="120" y="250" width="160" height="150" rx="6" class="box"/>
+  <text x="200" y="273" text-anchor="middle" class="text" style="font-weight:600">Scan Engine</text>
+  <text x="135" y="295" class="text-small">• run_zap_scan()</text>
+  <text x="135" y="313" class="text-small">• sanitize_url()</text>
+  <text x="135" y="331" class="text-small">• Orchestrate Docker</text>
+  <text x="135" y="349" class="text-small">• Parse ZAP JSON</text>
+  <text x="135" y="367" class="text-small">• Generate reports</text>
+  <text x="135" y="385" class="text-small">• Export to SysReptor</text>
+
+  <!-- AI Module -->
+  <rect x="320" y="250" width="160" height="150" rx="6" class="box"/>
+  <text x="400" y="273" text-anchor="middle" class="text" style="font-weight:600">AI Module</text>
+  <text x="335" y="295" class="text-small">• initialize_gemini()</text>
+  <text x="335" y="313" class="text-small">• enrich_finding()</text>
+  <text x="335" y="331" class="text-small">• Generate concise</text>
+  <text x="335" y="349" class="text-small">  technical reports</text>
+  <text x="335" y="367" class="text-small">• Developer-focused</text>
+  <text x="335" y="385" class="text-small">  remediation steps</text>
+
+  <!-- History Tracker -->
+  <rect x="520" y="250" width="160" height="150" rx="6" class="box"/>
+  <text x="600" y="273" text-anchor="middle" class="text" style="font-weight:600">History Tracker</text>
+  <text x="535" y="295" class="text-small">• record_scan()</text>
+  <text x="535" y="313" class="text-small">• load_history()</text>
+  <text x="535" y="331" class="text-small">• normalise_url()</text>
+  <text x="535" y="349" class="text-small">• Dedup by URL</text>
+  <text x="535" y="367" class="text-small">• Track scan count</text>
+  <text x="535" y="385" class="text-small">• scan_history.json</text>
+
+  <!-- Arrows from backend -->
+  <path d="M 200 420 L 200 470" class="arrow"/>
+  <text x="210" y="450" class="label">scan</text>
+
+  <path d="M 400 420 L 400 470" class="arrow"/>
+  <text x="410" y="450" class="label">enrich</text>
+
+  <path d="M 265 420 L 330 470" class="arrow"/>
+  <text x="285" y="450" class="label">export</text>
+
+  <!-- External Services Row -->
+  <!-- Docker ZAP -->
+  <rect x="50" y="480" width="180" height="100" rx="6" class="box"/>
+  <text x="140" y="505" text-anchor="middle" class="text" style="font-weight:600">🐳 Docker</text>
+  <text x="140" y="525" text-anchor="middle" class="text">ZAP Container</text>
+  <text x="65" y="545" class="text-small">• Baseline scan</text>
+  <text x="65" y="563" class="text-small">• JSON output</text>
+
+  <!-- Google Gemini -->
+  <rect x="310" y="480" width="180" height="100" rx="6" class="box"/>
+  <text x="400" y="505" text-anchor="middle" class="text" style="font-weight:600">🤖 Google Gemini</text>
+  <text x="400" y="525" text-anchor="middle" class="text">API</text>
+  <text x="325" y="545" class="text-small">• gemini-flash-latest</text>
+  <text x="325" y="563" class="text-small">• Finding enrichment</text>
+
+  <!-- SysReptor -->
+  <rect x="250" y="600" width="180" height="80" rx="6" class="box"/>
+  <text x="340" y="625" text-anchor="middle" class="text" style="font-weight:600">📤 SysReptor API</text>
+  <text x="340" y="645" text-anchor="middle" class="text-small">(optional)</text>
+  <text x="265" y="665" class="text-small">• Create projects</text>
+
+  <!-- Arrow from Docker to SysReptor -->
+  <path d="M 200 580 L 300 600" class="arrow"/>
+
+  <!-- Local Storage -->
+  <rect x="520" y="480" width="230" height="100" rx="6" class="box-alt"/>
+  <text x="635" y="505" text-anchor="middle" class="text" style="font-weight:600">💾 Local Storage</text>
+  <text x="535" y="530" class="text-small">• scans/ (ZAP outputs)</text>
+  <text x="535" y="548" class="text-small">• scan_history.json (dashboard)</text>
+  <text x="535" y="566" class="text-small">• *.html, *.json reports</text>
+
+  <!-- Arrow from backend to storage -->
+  <path d="M 600 420 L 600 480" class="arrow"/>
+  <text x="610" y="450" class="label">persist</text>
+
+  <!-- Legend -->
+  <rect x="50" y="710" width="700" height="170" rx="8" class="box-alt"/>
+  <text x="400" y="735" text-anchor="middle" class="text-title">📋 Data Flow Summary</text>
+  
+  <text x="70" y="760" class="text-small" style="font-weight:600">1. User enters target URL in Scanner tab</text>
+  <text x="70" y="778" class="text-small">2. Flask triggers ZAP Docker scan → generates JSON/HTML reports</text>
+  <text x="70" y="796" class="text-small">3. Parser converts ZAP JSON to SysReptor format</text>
+  <text x="70" y="814" class="text-small">4. AI module enriches findings with Gemini (optional)</text>
+  <text x="70" y="832" class="text-small">5. Findings exported to SysReptor (optional)</text>
+  <text x="70" y="850" class="text-small">6. Scan recorded in dashboard with deduplication by URL</text>
+  <text x="70" y="868" class="text-small">7. User views results, downloads reports, tracks org-wide metrics</text>
+
+  <!-- Footer -->
+  <text x="400" y="895" text-anchor="middle" class="text-small" style="font-size:10px; fill:#aaa">
+    Letshego Group Security Scanner © 2026
+  </text>
+</svg>
