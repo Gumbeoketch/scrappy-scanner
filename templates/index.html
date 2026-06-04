@@ -424,7 +424,7 @@ document.getElementById('scanForm').addEventListener('submit', async function(e)
     btn.innerHTML = '<div class="spinner"></div> Scanning…';
     bar.className = 'status-bar active';
     document.getElementById('statusSpinner').style.display = 'inline-block';
-    document.getElementById('statusText').textContent = 'Running ZAP baseline scan — this may take several minutes…';
+    document.getElementById('statusText').textContent = 'Submitting scan request…';
 
     const payload = {
         url:                document.getElementById('targetUrl').value.trim(),
@@ -434,30 +434,77 @@ document.getElementById('scanForm').addEventListener('submit', async function(e)
     };
 
     try {
-        const res    = await fetch('/api/scan', {
+        // Step 1: kick off the job — returns immediately with a job_id
+        const kickoff = await fetch('/api/scan', {
             method: 'POST',
             headers: {'Content-Type':'application/json'},
             body: JSON.stringify(payload)
         });
-        const result = await res.json();
 
-        if (!res.ok || result.error) throw new Error(result.error || 'Scan failed');
+        if (!kickoff.ok) {
+            const err = await kickoff.json();
+            throw new Error(err.error || 'Failed to start scan');
+        }
 
-        showResults(result);
-        bar.className = 'status-bar active success';
-        document.getElementById('statusSpinner').style.display = 'none';
-        document.getElementById('statusText').textContent =
-            `✅ Scan complete — ${result.findings_count} finding(s) found`;
+        const { job_id } = await kickoff.json();
+
+        // Step 2: poll for completion
+        await pollJob(job_id);
 
     } catch(err) {
         bar.className = 'status-bar active error';
         document.getElementById('statusSpinner').style.display = 'none';
         document.getElementById('statusText').textContent = '❌ ' + err.message;
-    } finally {
         btn.disabled = false;
         btn.innerHTML = '🔍 Start Scan';
     }
 });
+
+async function pollJob(job_id) {
+    const btn  = document.getElementById('scanBtn');
+    const bar  = document.getElementById('statusBar');
+
+    while (true) {
+        await new Promise(r => setTimeout(r, 3000)); // poll every 3s
+
+        let job;
+        try {
+            const res = await fetch(`/api/scan/status/${job_id}`);
+            job = await res.json();
+        } catch(e) {
+            // transient network hiccup — keep trying
+            document.getElementById('statusText').textContent =
+                '⏳ Waiting for server response…';
+            continue;
+        }
+
+        // Update progress bar message
+        const pct  = job.progress || 0;
+        const msg  = job.message  || 'Working…';
+        document.getElementById('statusText').textContent =
+            `[${pct}%] ${msg}`;
+
+        if (job.status === 'done') {
+            showResults(job.result);
+            bar.className = 'status-bar active success';
+            document.getElementById('statusSpinner').style.display = 'none';
+            document.getElementById('statusText').textContent =
+                `✅ Scan complete — ${job.result.findings_count} finding(s) found`;
+            btn.disabled = false;
+            btn.innerHTML = '🔍 Start Scan';
+            return;
+        }
+
+        if (job.status === 'error') {
+            bar.className = 'status-bar active error';
+            document.getElementById('statusSpinner').style.display = 'none';
+            document.getElementById('statusText').textContent = '❌ ' + job.message;
+            btn.disabled = false;
+            btn.innerHTML = '🔍 Start Scan';
+            return;
+        }
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Results rendering

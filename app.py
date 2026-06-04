@@ -8,6 +8,8 @@ import json
 import subprocess
 import time
 import re
+import threading
+import uuid
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_file
@@ -19,6 +21,10 @@ app.config['UPLOAD_FOLDER'] = Path('scans')
 app.config['UPLOAD_FOLDER'].mkdir(exist_ok=True)
 
 HISTORY_FILE = Path('scan_history.json')
+
+# In-memory job store  { job_id: { status, progress, result, error } }
+_jobs: dict = {}
+_jobs_lock = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +233,7 @@ Respond with ONLY this JSON, no extra text:
 # Parser
 # ---------------------------------------------------------------------------
 
-def parse_zap_to_sysreptor(zap_json_path, use_ai=True):
+def parse_zap_to_sysreptor(zap_json_path, use_ai=True, progress_cb=None):
     with open(zap_json_path) as f:
         zap_data = json.load(f)
 
@@ -245,7 +251,7 @@ def parse_zap_to_sysreptor(zap_json_path, use_ai=True):
 
     model = initialize_gemini() if use_ai else None
 
-    for alert in alerts:
+    for idx, alert in enumerate(alerts, 1):
         title      = alert.get('alert', 'Untitled Finding')
         riskdesc   = alert.get('riskdesc', 'Low (Default)')
         severity   = severity_map.get(riskdesc.split(' ')[0], 'low')
@@ -276,6 +282,8 @@ def parse_zap_to_sysreptor(zap_json_path, use_ai=True):
         }
 
         if model:
+            if progress_cb:
+                progress_cb(f'AI enrichment: {idx}/{len(alerts)} — {title[:50]}…')
             finding_data = enrich_finding_with_ai(model, finding_data)
 
         findings.append({'status': 'in-progress', 'data': finding_data})
@@ -358,37 +366,36 @@ def index():
     return render_template('index.html')
 
 
-@app.route('/api/scan', methods=['POST'])
-def scan_endpoint():
+def _run_scan_job(job_id, target_url, use_ai, export_reptor, project_name):
+    """Background thread: runs the full scan pipeline and updates job state."""
+    def update(status, progress, message):
+        with _jobs_lock:
+            _jobs[job_id].update(status=status, progress=progress, message=message)
+
     try:
-        data           = request.get_json()
-        target_url     = data.get('url', '').strip()
-        use_ai         = data.get('use_ai', True)
-        export_reptor  = data.get('export_to_sysreptor', False)
-        project_name   = data.get('project_name',
-                                  f"Security Scan - {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-
-        if not target_url:
-            return jsonify({'error': 'URL is required'}), 400
-        if not target_url.startswith(('http://', 'https://')):
-            return jsonify({'error': 'URL must start with http:// or https://'}), 400
-
         output_dir = app.config['UPLOAD_FOLDER']
 
-        # Step 1: ZAP scan
+        # Step 1 — ZAP scan
+        update('running', 10, 'Starting ZAP Docker container…')
         scan_result = run_zap_scan(target_url, output_dir)
 
-        # Step 2: Parse + enrich
-        findings_data = parse_zap_to_sysreptor(scan_result['json_path'], use_ai=use_ai)
+        # Step 2 — Parse
+        update('running', 60, 'Parsing ZAP findings…')
+        findings_data = parse_zap_to_sysreptor(
+            scan_result['json_path'],
+            use_ai=use_ai,
+            progress_cb=lambda msg: update('running', 70, msg)
+        )
 
         parsed_json_path = output_dir / f"{scan_result['resource_name']}_parsed.json"
         with open(parsed_json_path, 'w') as f:
             json.dump(findings_data, f, indent=2)
 
-        # Step 3: Record in dashboard history (deduped by URL)
+        # Step 3 — Record history
+        update('running', 90, 'Recording to dashboard…')
         history_entry = record_scan(target_url, findings_data['findings'])
 
-        response = {
+        result = {
             'success': True,
             'target_url': target_url,
             'scan_files': {
@@ -401,16 +408,67 @@ def scan_endpoint():
             'history_entry':  history_entry
         }
 
-        # Step 4: Optional SysReptor export
+        # Step 4 — Optional SysReptor export
         if export_reptor:
-            response['sysreptor'] = export_to_sysreptor(findings_data, project_name)
+            update('running', 95, 'Exporting to SysReptor…')
+            result['sysreptor'] = export_to_sysreptor(findings_data, project_name)
 
-        return jsonify(response)
+        with _jobs_lock:
+            _jobs[job_id].update(status='done', progress=100,
+                                 message='Scan complete', result=result)
 
     except subprocess.TimeoutExpired:
-        return jsonify({'error': 'Scan timeout — target took too long to respond'}), 500
+        with _jobs_lock:
+            _jobs[job_id].update(status='error',
+                                 message='Scan timeout — target took too long to respond')
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        with _jobs_lock:
+            _jobs[job_id].update(status='error', message=str(e))
+
+
+@app.route('/api/scan', methods=['POST'])
+def scan_endpoint():
+    """Start a scan job and return the job ID immediately."""
+    data          = request.get_json()
+    target_url    = (data.get('url') or '').strip()
+    use_ai        = data.get('use_ai', True)
+    export_reptor = data.get('export_to_sysreptor', False)
+    project_name  = data.get('project_name',
+                              f"Security Scan - {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+
+    if not target_url:
+        return jsonify({'error': 'URL is required'}), 400
+    if not target_url.startswith(('http://', 'https://')):
+        return jsonify({'error': 'URL must start with http:// or https://'}), 400
+
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {
+            'status':   'running',
+            'progress': 0,
+            'message':  'Queued…',
+            'result':   None,
+            'error':    None
+        }
+
+    t = threading.Thread(
+        target=_run_scan_job,
+        args=(job_id, target_url, use_ai, export_reptor, project_name),
+        daemon=True
+    )
+    t.start()
+
+    return jsonify({'job_id': job_id})
+
+
+@app.route('/api/scan/status/<job_id>', methods=['GET'])
+def scan_status(job_id):
+    """Poll endpoint — returns current job state."""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
+    return jsonify(job)
 
 
 @app.route('/api/config', methods=['GET'])
