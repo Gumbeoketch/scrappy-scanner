@@ -134,7 +134,7 @@ source .venv/bin/activate
 python3 app.py
 ```
 
-The server will start at **http://localhost:8000**
+The server will start at **http://localhost:5000**
 
 ### Scanner Tab
 
