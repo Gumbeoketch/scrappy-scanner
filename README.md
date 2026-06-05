@@ -1,4 +1,4 @@
-# Letshego Group Security Scanner
+# Security Scanner
 
 A unified web application for automated security scanning with ZAP, AI-powered finding enrichment, SysReptor integration, and vulnerability tracking across your organization.
 
