@@ -342,4 +342,4 @@ Built with:
 - [Google Gemini](https://ai.google.dev/) — AI enrichment
 - [SysReptor](https://sysreptor.com/) — Report generation
 
-Developed for **Letshego Group** by the Security Engineering team.
+Developed for Security Teams for Security
