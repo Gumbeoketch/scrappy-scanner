@@ -6,10 +6,13 @@ Combines ZAP scanning, AI enrichment, and SysReptor export into a unified UI
 import os
 import json
 import subprocess
+import sys
+import shutil
 import time
 import re
 import threading
 import uuid
+import pyotp
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_file
@@ -21,6 +24,23 @@ app.config['UPLOAD_FOLDER'] = Path('scans')
 app.config['UPLOAD_FOLDER'].mkdir(exist_ok=True)
 
 HISTORY_FILE = Path('scan_history.json')
+
+# Resolve reptor binary: prefer the venv running this process,
+# fall back to PATH, then common install locations.
+def _find_reptor():
+    venv_reptor = Path(sys.executable).parent / 'reptor'
+    if venv_reptor.exists():
+        return str(venv_reptor)
+    on_path = shutil.which('reptor')
+    if on_path:
+        return on_path
+    for candidate in ['/usr/local/bin/reptor', '/usr/bin/reptor',
+                      str(Path.home() / '.local' / 'bin' / 'reptor')]:
+        if Path(candidate).exists():
+            return candidate
+    return None
+
+REPTOR_BIN = _find_reptor()
 
 # In-memory job store  { job_id: { status, progress, result, error } }
 _jobs: dict = {}
@@ -306,6 +326,12 @@ def export_to_sysreptor(findings_data, project_name):
     reptor_design_id = os.getenv('REPTOR_DESIGN_ID')
     reptor_template_id = os.getenv('REPTOR_TEMPLATE_ID')
 
+    if not REPTOR_BIN:
+        raise Exception(
+            'reptor is not installed. Run: pip install reptor  '
+            '(then restart the app)'
+        )
+
     if not all([reptor_server, reptor_api_key, reptor_design_id]):
         raise Exception('Missing SysReptor configuration (REPTOR_SERVER, REPTOR_API_KEY, REPTOR_DESIGN_ID)')
 
@@ -539,6 +565,7 @@ if __name__ == '__main__':
     print(f"\n  Configuration:")
     print(f"    - Gemini AI: {'✓ Enabled' if os.getenv('GEMINI_API_KEY') else '✗ Disabled'}")
     print(f"    - SysReptor: {'✓ Configured' if all([os.getenv('REPTOR_SERVER'), os.getenv('REPTOR_API_KEY')]) else '✗ Not configured'}")
+    print(f"    - reptor CLI: {'✓ ' + REPTOR_BIN if REPTOR_BIN else '✗ Not found (run: pip install reptor)'}")
     print(f"\n  Press Ctrl+C to stop\n")
     print("="*60 + "\n")
 
