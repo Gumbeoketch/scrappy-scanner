@@ -1,0 +1,476 @@
+@import "/assets/global/base.css";
+
+/* ==========================================
+   THEME VARIABLES
+========================================== */
+
+:root {
+
+    --color-risk-critical:#B71C1C;
+    --color-risk-high:#D84315;
+    --color-risk-medium:#F9A825;
+    --color-risk-low:#1565C0;
+    --color-risk-info:#2E7D32;
+
+    --brand-primary:#e67e22;
+    --brand-primary-dark:#cf6d18;
+
+    --brand-charcoal:#2E2E2E;
+    --brand-light:#F7F7F7;
+    --brand-border:#DDDDDD;
+    --brand-muted:#757575;
+    --brand-white:#FFFFFF;
+
+}
+
+/* ==========================================
+   BASE
+========================================== */
+
+html {
+
+    font-family:"Noto Sans",sans-serif;
+    font-size:10pt;
+    color:var(--brand-charcoal);
+
+}
+
+body {
+
+    line-height:1.5;
+
+}
+
+p {
+
+    text-align:justify;
+    margin-bottom:.7em;
+
+}
+
+h1,h2,h3,h4 {
+
+    color:var(--brand-charcoal);
+
+}
+
+a {
+
+    color:inherit;
+    text-decoration:none;
+
+}
+
+
+/* ==========================================
+   PAGE
+========================================== */
+
+@page {
+
+    margin:35mm 20mm 25mm 20mm;
+
+    @top-left {
+        content:none !important;
+    }
+
+    @top-right {
+        content:none !important;
+    }
+
+    @bottom-left {
+        content:element(footer-left);
+    }
+
+    @bottom-center {
+        content:element(footer-center);
+    }
+
+    @bottom-right-corner {
+        content:counter(page);
+        font-size:9pt;
+    }
+
+}
+
+
+/* ==========================================
+   HEADER
+========================================== */
+
+#header {
+
+    display:none;
+
+}
+
+
+/* ==========================================
+   FOOTER
+========================================== */
+
+#footer {
+
+    position:absolute;
+    width:0;
+
+}
+
+#footer-left {
+
+    position:running(footer-left);
+
+    color:var(--brand-muted);
+
+    font-size:8pt;
+
+}
+
+#footer-center {
+
+    position:running(footer-center);
+
+    color:var(--brand-charcoal);
+
+    font-size:8pt;
+
+}
+
+
+/* ==========================================
+   COVER PAGE
+========================================== */
+
+#page-cover {
+
+    page:page-cover;
+
+}
+
+.cover-top-bar {
+
+    position:absolute;
+
+    top:-35mm;
+    left:-20mm;
+    right:-20mm;
+
+    height:3mm;
+
+    background:#223fe6;
+
+}
+
+.cover-logo {
+
+    position:absolute;
+
+    top:-10mm;
+
+    left:0;
+
+}
+
+.cover-logo img {
+
+    height:22mm;
+
+    width:auto;
+
+}
+
+.cover-content {
+
+    position:absolute;
+
+    top:42mm;
+
+    left:0;
+
+    width:14cm;
+
+}
+
+.cover-date-pill {
+
+    display:inline-block;
+
+    padding:.4em 1.2em;
+
+    border:1px solid var(--brand-border);
+
+    border-radius:30px;
+
+    color:var(--brand-muted);
+
+    margin-bottom:1.5em;
+
+    font-size:9pt;
+
+}
+
+.cover-main-title {
+
+    font-size:50px;
+
+    font-weight:800;
+
+    line-height:1.05;
+
+    letter-spacing:-1px;
+
+    color:var(--brand-charcoal);
+
+    margin:0;
+
+}
+
+.cover-divider {
+
+    width:70px;
+
+    height:4px;
+
+    margin:18px 0;
+
+    background:#2225e6;
+
+}
+
+.cover-customer {
+
+    font-size:30px;
+
+    font-weight:700;
+
+    color:#2246e6;
+
+    text-transform:uppercase;
+
+    margin:0;
+
+}
+
+.cover-type {
+
+    display:inline-block;
+
+    margin-top:20px;
+
+    padding:.35em 1em;
+
+    border:1px solid var(--brand-border);
+
+    border-radius:20px;
+
+    color:var(--brand-muted);
+
+}
+
+.cover-contact {
+
+    position:absolute;
+
+    bottom:-10mm;
+
+    left:0;
+
+    font-size:9pt;
+
+    color:var(--brand-muted);
+
+}
+
+
+/* ==========================================
+   TABLES
+========================================== */
+
+table {
+
+    width:100%;
+
+    border-collapse:collapse;
+
+}
+
+th {
+
+    background:var(--brand-light);
+
+    border-bottom:2px solid #2f22e6;
+
+    padding:.7em;
+
+    text-align:left;
+
+    font-weight:700;
+
+}
+
+td {
+
+    padding:.6em;
+
+    border-bottom:1px solid #eee;
+
+}
+
+
+/* ==========================================
+   TOC
+========================================== */
+
+#toc li {
+
+    list-style:none;
+
+    margin-bottom:.35em;
+
+}
+
+#toc .ref::after {
+
+    content:" " leader(".") " " target-counter(attr(href), page);
+
+}
+
+
+/* ==========================================
+   FINDINGS
+========================================== */
+
+.finding-block {
+
+    margin-bottom:1cm;
+
+    padding-bottom:1cm;
+
+    border-bottom:1px solid var(--brand-border);
+
+}
+
+.finding-title {
+
+    font-size:16pt;
+
+    margin-bottom:.3cm;
+
+}
+
+.finding-meta {
+
+    font-size:9pt;
+
+    color:var(--brand-muted);
+
+    margin-bottom:1em;
+
+    padding-bottom:.6em;
+
+    border-bottom:1px solid var(--brand-border);
+
+}
+
+
+/* ==========================================
+   SEVERITY PILLS
+========================================== */
+
+.severity-pill {
+
+    display:inline-block;
+
+    padding:.35em 1em;
+
+    border-radius:30px;
+
+    font-size:8pt;
+
+    font-weight:700;
+
+    color:white;
+
+}
+
+.severity-critical {
+
+    background:var(--color-risk-critical);
+
+}
+
+.severity-high {
+
+    background:var(--color-risk-high);
+
+}
+
+.severity-medium {
+
+    background:var(--color-risk-medium);
+
+    color:#222;
+
+}
+
+.severity-low {
+
+    background:var(--color-risk-low);
+
+}
+
+.severity-info {
+
+    background:var(--color-risk-info);
+
+}
+
+
+/* ==========================================
+   WATERMARK
+========================================== */
+
+#watermark {
+
+    position:fixed;
+
+    top:8cm;
+
+    left:2cm;
+
+    transform:rotate(-45deg);
+
+    font-size:100pt;
+
+    opacity:.10;
+
+}
+
+
+/* ==========================================
+   COVER PAGE RULES
+========================================== */
+
+@page page-cover {
+
+    @top-left {
+        content:none !important;
+    }
+
+    @top-right {
+        content:none !important;
+    }
+
+    @bottom-left {
+        content:none !important;
+    }
+
+    @bottom-center {
+        content:none !important;
+    }
+
+    @bottom-right-corner {
+        content:none !important;
+    }
+
+}
