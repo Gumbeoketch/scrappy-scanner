@@ -12,11 +12,9 @@ import time
 import re
 import threading
 import uuid
-import pyotp
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_file
-from werkzeug.utils import secure_filename
 import google.generativeai as genai
 
 app = Flask(__name__, static_folder='images', static_url_path='/static/images')
@@ -73,7 +71,6 @@ load_env()
 # ---------------------------------------------------------------------------
 
 def load_history():
-    """Load scan history from JSON file."""
     if HISTORY_FILE.exists():
         try:
             with open(HISTORY_FILE) as f:
@@ -84,15 +81,12 @@ def load_history():
 
 
 def save_history(history):
-    """Persist scan history to JSON file."""
     with open(HISTORY_FILE, 'w') as f:
         json.dump(history, f, indent=2)
 
 
 def normalise_url(url):
-    """Strip trailing slash and lowercase scheme+host for dedup keying."""
     url = url.strip().rstrip('/')
-    # lowercase scheme and host only
     match = re.match(r'(https?://)([^/]+)(.*)', url, re.IGNORECASE)
     if match:
         url = match.group(1).lower() + match.group(2).lower() + match.group(3)
@@ -100,11 +94,6 @@ def normalise_url(url):
 
 
 def record_scan(target_url, findings):
-    """
-    Record a completed scan.
-    Each unique URL gets one entry; re-scanning updates the latest result
-    but preserves cumulative totals and a limited history of past scans.
-    """
     history = load_history()
     key = normalise_url(target_url)
 
@@ -129,7 +118,6 @@ def record_scan(target_url, findings):
         entry['last_scanned'] = now
         entry['scan_count'] += 1
         entry['latest'] = counts
-        # Keep last 10 scan snapshots per URL
         entry['history'].append({'scanned_at': now, 'counts': counts})
         entry['history'] = entry['history'][-10:]
 
@@ -138,7 +126,7 @@ def record_scan(target_url, findings):
 
 
 # ---------------------------------------------------------------------------
-# Scanner helpers
+# Scanner
 # ---------------------------------------------------------------------------
 
 def sanitize_url_to_filename(url):
@@ -156,8 +144,7 @@ def run_zap_scan(target_url, output_dir):
     scan_json = output_dir / f"{scan_prefix}.json"
     scan_html = output_dir / f"{scan_prefix}.html"
 
-    # Ensure the output directory is world-writable so the ZAP container
-    # (which runs as uid 1000 inside Docker) can write its output files.
+    # Ensure world-writable so the ZAP container can write output files
     output_dir.chmod(0o777)
 
     cmd = [
@@ -191,9 +178,7 @@ def initialize_gemini():
     api_key = os.getenv('GEMINI_API_KEY')
     if not api_key:
         return None
-
     genai.configure(api_key=api_key)
-
     safety_settings = [
         {'category': 'HARM_CATEGORY_HARASSMENT',        'threshold': 'BLOCK_NONE'},
         {'category': 'HARM_CATEGORY_HATE_SPEECH',       'threshold': 'BLOCK_NONE'},
@@ -207,11 +192,11 @@ def enrich_finding_with_ai(model, finding_data):
     if not model:
         return finding_data
 
-    title       = finding_data.get('title', 'Unknown')
-    description = finding_data.get('description', '')
+    title          = finding_data.get('title', 'Unknown')
+    description    = finding_data.get('description', '')
     recommendation = finding_data.get('recommendation', '')
-    severity    = finding_data.get('severity', 'low')
-    affected    = finding_data.get('affected_components', [])
+    severity       = finding_data.get('severity', 'low')
+    affected       = finding_data.get('affected_components', [])
 
     prompt = f"""You are a security engineer writing a concise technical report.
 
@@ -227,7 +212,7 @@ Respond with ONLY this JSON, no extra text:
         response = model.generate_content(prompt)
 
         if not response.parts:
-            print(f"  ⚠ Skipping '{title}': response blocked by safety filter")
+            print(f"  ⚠ Skipping '{title}': blocked by safety filter")
             return finding_data
 
         result_text = response.text.strip()
@@ -273,13 +258,12 @@ def parse_zap_to_sysreptor(zap_json_path, use_ai=True, progress_cb=None):
             alerts.extend(zap_data['site'].get('alerts', []))
 
     severity_map = {'High': 'high', 'Medium': 'medium', 'Low': 'low', 'Informational': 'info'}
-
     model = initialize_gemini() if use_ai else None
 
     for idx, alert in enumerate(alerts, 1):
-        title      = alert.get('alert', 'Untitled Finding')
-        riskdesc   = alert.get('riskdesc', 'Low (Default)')
-        severity   = severity_map.get(riskdesc.split(' ')[0], 'low')
+        title          = alert.get('alert', 'Untitled Finding')
+        riskdesc       = alert.get('riskdesc', 'Low (Default)')
+        severity       = severity_map.get(riskdesc.split(' ')[0], 'low')
         description    = alert.get('desc', '')
         recommendation = alert.get('solution', '')
 
@@ -321,21 +305,18 @@ def parse_zap_to_sysreptor(zap_json_path, use_ai=True, progress_cb=None):
 # ---------------------------------------------------------------------------
 
 def export_to_sysreptor(findings_data, project_name):
-    reptor_server    = os.getenv('REPTOR_SERVER')
-    reptor_api_key   = os.getenv('REPTOR_API_KEY')
-    reptor_design_id = os.getenv('REPTOR_DESIGN_ID')
+    reptor_server      = os.getenv('REPTOR_SERVER')
+    reptor_api_key     = os.getenv('REPTOR_API_KEY')
+    reptor_design_id   = os.getenv('REPTOR_DESIGN_ID')
     reptor_template_id = os.getenv('REPTOR_TEMPLATE_ID')
 
     if not REPTOR_BIN:
-        raise Exception(
-            'reptor is not installed. Run: pip install reptor  '
-            '(then restart the app)'
-        )
+        raise Exception('reptor is not installed. Run: pip install reptor (then restart the app)')
 
     if not all([reptor_server, reptor_api_key, reptor_design_id]):
         raise Exception('Missing SysReptor configuration (REPTOR_SERVER, REPTOR_API_KEY, REPTOR_DESIGN_ID)')
 
-    cmd = ['reptor', '--server', reptor_server, '--token', reptor_api_key,
+    cmd = [REPTOR_BIN, '--server', reptor_server, '--token', reptor_api_key,
            'createproject', '--name', project_name, '-d', reptor_design_id]
 
     if reptor_template_id:
@@ -352,10 +333,8 @@ def export_to_sysreptor(findings_data, project_name):
         r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}',
         combined
     )
-
     if not project_id_match:
         project_id_match = re.search(r'"id"\s*:\s*"([0-9a-fA-F-]{36})"', combined)
-
     if not project_id_match:
         try:
             jm = re.search(r'\{.*\}', combined, re.DOTALL)
@@ -366,7 +345,6 @@ def export_to_sysreptor(findings_data, project_name):
                     project_id_match = type('m', (), {'group': lambda self, n: pid})()
         except Exception:
             pass
-
     if not project_id_match:
         print(f"DEBUG stdout: {result.stdout}")
         print(f"DEBUG stderr: {result.stderr}")
@@ -376,7 +354,7 @@ def export_to_sysreptor(findings_data, project_name):
     os.environ['REPTOR_PROJECT_ID'] = project_id
 
     push = subprocess.run(
-        ['reptor', '--server', reptor_server, '--token', reptor_api_key, 'pushproject'],
+        [REPTOR_BIN, '--server', reptor_server, '--token', reptor_api_key, 'pushproject'],
         input=json.dumps(findings_data),
         capture_output=True,
         text=True
@@ -398,7 +376,6 @@ def index():
 
 
 def _run_scan_job(job_id, target_url, use_ai, export_reptor, project_name):
-    """Background thread: runs the full scan pipeline and updates job state."""
     def update(status, progress, message):
         with _jobs_lock:
             _jobs[job_id].update(status=status, progress=progress, message=message)
@@ -406,11 +383,9 @@ def _run_scan_job(job_id, target_url, use_ai, export_reptor, project_name):
     try:
         output_dir = app.config['UPLOAD_FOLDER']
 
-        # Step 1 — ZAP scan
         update('running', 10, 'Starting ZAP Docker container…')
         scan_result = run_zap_scan(target_url, output_dir)
 
-        # Step 2 — Parse
         update('running', 60, 'Parsing ZAP findings…')
         findings_data = parse_zap_to_sysreptor(
             scan_result['json_path'],
@@ -422,7 +397,6 @@ def _run_scan_job(job_id, target_url, use_ai, export_reptor, project_name):
         with open(parsed_json_path, 'w') as f:
             json.dump(findings_data, f, indent=2)
 
-        # Step 3 — Record history
         update('running', 90, 'Recording to dashboard…')
         history_entry = record_scan(target_url, findings_data['findings'])
 
@@ -439,7 +413,6 @@ def _run_scan_job(job_id, target_url, use_ai, export_reptor, project_name):
             'history_entry':  history_entry
         }
 
-        # Step 4 — Optional SysReptor export
         if export_reptor:
             update('running', 95, 'Exporting to SysReptor…')
             result['sysreptor'] = export_to_sysreptor(findings_data, project_name)
@@ -459,7 +432,6 @@ def _run_scan_job(job_id, target_url, use_ai, export_reptor, project_name):
 
 @app.route('/api/scan', methods=['POST'])
 def scan_endpoint():
-    """Start a scan job and return the job ID immediately."""
     data          = request.get_json()
     target_url    = (data.get('url') or '').strip()
     use_ai        = data.get('use_ai', True)
@@ -482,19 +454,17 @@ def scan_endpoint():
             'error':    None
         }
 
-    t = threading.Thread(
+    threading.Thread(
         target=_run_scan_job,
         args=(job_id, target_url, use_ai, export_reptor, project_name),
         daemon=True
-    )
-    t.start()
+    ).start()
 
     return jsonify({'job_id': job_id})
 
 
 @app.route('/api/scan/status/<job_id>', methods=['GET'])
 def scan_status(job_id):
-    """Poll endpoint — returns current job state."""
     with _jobs_lock:
         job = _jobs.get(job_id)
     if not job:
@@ -516,26 +486,22 @@ def get_config():
 
 @app.route('/api/dashboard', methods=['GET'])
 def dashboard_endpoint():
-    """Return aggregated stats and per-URL history for the dashboard."""
     history = load_history()
     scans   = list(history.get('scans', {}).values())
-
-    totals = {'high': 0, 'medium': 0, 'low': 0, 'info': 0}
+    totals  = {'high': 0, 'medium': 0, 'low': 0, 'info': 0}
     for s in scans:
         for sev, n in s.get('latest', {}).items():
             totals[sev] = totals.get(sev, 0) + n
-
     return jsonify({
-        'total_urls':    len(scans),
-        'total_scans':   sum(s.get('scan_count', 1) for s in scans),
-        'totals':        totals,
-        'urls':          sorted(scans, key=lambda x: x.get('last_scanned', ''), reverse=True)
+        'total_urls':  len(scans),
+        'total_scans': sum(s.get('scan_count', 1) for s in scans),
+        'totals':      totals,
+        'urls':        sorted(scans, key=lambda x: x.get('last_scanned', ''), reverse=True)
     })
 
 
 @app.route('/api/dashboard/delete/<path:url_key>', methods=['DELETE'])
 def delete_dashboard_entry(url_key):
-    """Remove a URL entry from the dashboard."""
     history = load_history()
     key = normalise_url(url_key)
     if key in history.get('scans', {}):
@@ -561,7 +527,7 @@ if __name__ == '__main__':
     print("\n" + "="*60)
     print("  Letshego Group Security Scanner")
     print("="*60)
-    print(f"\n  Starting server at http://localhost:5000")
+    print(f"\n  Starting server at http://localhost:8000")
     print(f"\n  Configuration:")
     print(f"    - Gemini AI: {'✓ Enabled' if os.getenv('GEMINI_API_KEY') else '✗ Disabled'}")
     print(f"    - SysReptor: {'✓ Configured' if all([os.getenv('REPTOR_SERVER'), os.getenv('REPTOR_API_KEY')]) else '✗ Not configured'}")
@@ -569,4 +535,4 @@ if __name__ == '__main__':
     print(f"\n  Press Ctrl+C to stop\n")
     print("="*60 + "\n")
 
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=8000)
