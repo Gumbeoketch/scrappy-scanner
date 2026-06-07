@@ -527,7 +527,7 @@ if __name__ == '__main__':
     print("\n" + "="*60)
     print("  Letshego Group Security Scanner")
     print("="*60)
-    print(f"\n  Starting server at http://localhost:8000")
+    print(f"\n  Starting server at http://localhost:5000")
     print(f"\n  Configuration:")
     print(f"    - Gemini AI: {'✓ Enabled' if os.getenv('GEMINI_API_KEY') else '✗ Disabled'}")
     print(f"    - SysReptor: {'✓ Configured' if all([os.getenv('REPTOR_SERVER'), os.getenv('REPTOR_API_KEY')]) else '✗ Not configured'}")
@@ -535,4 +535,4 @@ if __name__ == '__main__':
     print(f"\n  Press Ctrl+C to stop\n")
     print("="*60 + "\n")
 
-    app.run(debug=True, host='0.0.0.0', port=8000)
+    app.run(debug=True, host='0.0.0.0', port=5000)
