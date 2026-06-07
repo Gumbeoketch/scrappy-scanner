@@ -1,0 +1,402 @@
+<div data-sysreptor-generated="page-header" id="header">
+    <div id="header-logo">
+        <img src="/assets/name/lhl.jpg" alt="Logo" />
+    </div>
+</div>
+
+<div data-sysreptor-generated="page-footer" id="footer">
+
+    <div id="footer-left">
+
+        <em>CONFIDENTIAL</em>
+
+    </div>
+
+    <div id="footer-center">
+
+        {{ report.title }}
+
+    </div>
+
+</div>
+
+<div
+    v-if="report.draft"
+    id="watermark">
+
+    DRAFT
+
+</div>
+
+<section
+    id="page-cover"
+    data-sysreptor-generated="page-cover">
+
+    <div class="cover-top-bar"></div>
+
+    <div class="cover-logo">
+
+        <img
+            src="/assets/name/lhl.jpg"
+            alt="Logo"/>
+
+    </div>
+
+    <div class="cover-content">
+
+        <div class="cover-date-pill">
+
+            {{ formatDate(report.report_date,'long') }}
+
+        </div>
+
+        <h1 class="cover-main-title">
+
+            Vulnerability Assessment<br>
+
+            & Penetration Test Report
+
+        </h1>
+
+        <div class="cover-divider"></div>
+
+        <h2 class="cover-customer">
+
+            {{ report.customer_name }}
+
+        </h2>
+
+        <div class="cover-type">
+
+            {{ report.test_type || 'Vulnerability Assessment and Penetration Testing' }}
+
+        </div>
+
+    </div>
+
+    <div class="cover-contact">
+
+        <p :set="lead_pentester = pentesters.find(p => p.roles.includes('lead'))">
+
+            <template v-if="lead_pentester">
+
+                <strong>Lead Assessor</strong><br>
+
+                {{ lead_pentester.name }}<br>
+
+                {{ lead_pentester.email }}
+
+            </template>
+
+        </p>
+
+    </div>
+
+</section>
+
+<pagebreak />
+
+<table-of-contents
+    id="toc"
+    v-slot="tocItems">
+
+    <h1>
+
+        Table of Contents
+
+    </h1>
+
+    <ul>
+
+        <li
+            v-for="item in tocItems"
+            :class="'toc-level' + item.level">
+
+            <ref :to="item.id"/>
+
+        </li>
+
+    </ul>
+
+</table-of-contents>
+
+<pagebreak />
+
+<section>
+
+<h1
+    id="executive-summary"
+    class="in-toc numbered">
+
+    Executive Summary
+
+</h1>
+
+<markdown
+    v-if="report.executive_summary"
+    :text="report.executive_summary"/>
+
+<h2 class="in-toc numbered">
+
+    Vulnerability Distribution
+
+</h2>
+
+<figure>
+
+<chart
+:width="15"
+:height="8"
+:config="{
+
+type:'bar',
+
+data:{
+
+labels:['Critical','High','Medium','Low','Info'],
+
+datasets:[{
+
+data:[
+
+finding_stats.count_critical,
+finding_stats.count_high,
+finding_stats.count_medium,
+finding_stats.count_low,
+finding_stats.count_info
+
+],
+
+backgroundColor:[
+
+cssvar('--color-risk-critical'),
+cssvar('--color-risk-high'),
+cssvar('--color-risk-medium'),
+cssvar('--color-risk-low'),
+cssvar('--color-risk-info')
+
+]
+
+}]
+
+},
+
+options:{
+
+plugins:{legend:{display:false}}
+
+}
+
+}"/>
+
+</figure>
+
+<h2 class="in-toc numbered">
+
+Scope
+
+</h2>
+
+<markdown :text="report.scope"/>
+
+<h2
+    id="finding-summary"
+    class="in-toc numbered">
+
+    Master Findings Table
+
+</h2>
+
+<table>
+
+<thead>
+
+<tr>
+
+<th style="width:3em;" align="center">
+
+ID
+
+</th>
+
+<th>
+
+Title
+
+</th>
+
+<th style="width:6em;" align="center">
+
+Status
+
+</th>
+
+<th style="width:6em;" align="center">
+
+Severity
+
+</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+<tr
+v-for="finding in findings"
+class="table-row-link">
+
+<td align="center">
+
+<ref :to="finding.id">
+
+{{ { info:'I', low:'L', medium:'M', high:'H', critical:'C' }[finding.severity.value] }}
+
+-
+
+{{ findings.filter(f => f.severity.value === finding.severity.value).indexOf(finding)+1 }}
+
+</ref>
+
+</td>
+
+<td>
+
+<ref :to="finding.id">
+
+{{ finding.title }}
+
+</ref>
+
+</td>
+
+<td align="center">
+
+<span
+v-if="finding.date_fixed"
+class="state-badge state-fixed">
+
+Fixed
+
+</span>
+
+<span
+v-else
+class="state-badge state-open">
+
+Open
+
+</span>
+
+</td>
+
+<td align="center">
+
+<span
+v-if="finding.date_fixed"
+class="severity-pill severity-resolved">
+
+{{ lodash.capitalize(finding.severity.value) }}
+
+</span>
+
+<span
+v-else
+:class="'severity-pill severity-' + finding.severity.value">
+
+{{ lodash.capitalize(finding.severity.value) }}
+
+</span>
+
+</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+</section>
+
+<pagebreak />
+
+<section>
+
+<h1
+id="findings"
+class="in-toc numbered">
+
+Detailed Findings
+
+</h1>
+
+<div
+v-for="finding in findings"
+class="finding-block">
+
+<h2
+:id="finding.id"
+class="finding-title in-toc">
+
+{{ { info:'I',low:'L',medium:'M',high:'H',critical:'C'}[finding.severity.value] }}
+
+-
+
+{{ findings.filter(f=>f.severity.value===finding.severity.value).indexOf(finding)+1 }}
+
+:
+
+{{ finding.title }}
+
+</h2>
+
+<div class="finding-badges">
+
+<span
+:class="'severity-pill severity-'+finding.severity.value">
+
+{{ lodash.capitalize(finding.severity.value) }}
+
+</span>
+
+</div>
+
+<div class="finding-meta">
+
+<div v-if="finding.affected_components.length">
+
+<strong>
+
+Affected Components:
+
+</strong>
+
+{{ finding.affected_components.join(', ') }}
+
+</div>
+
+</div>
+
+<h3>Description</h3>
+
+<markdown :text="finding.description"/>
+
+<h3>Recommendation</h3>
+
+<markdown :text="finding.recommendation"/>
+
+<pagebreak/>
+
+</div>
+
+</section>
+
+<section class="appendix">
+    <h1 id="appendix" class="in-toc numbered">Appendix</h1>
+    <!-- empty markdown removed -->
+    <div v-if="report.appendix_sections.length > 0" v-for="appendix_section in report.appendix_sections">
+        <h2 class="in-toc numbered">{{ appendix_section.title }}</h2>
+        <markdown :text="appendix_section.content" />
+    </div>
+</section>
