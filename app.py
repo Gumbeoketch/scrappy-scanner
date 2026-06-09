@@ -242,8 +242,8 @@ Respond with ONLY this JSON, no extra text:
             result_text = result_text[start:end + 1]
 
         enriched = json.loads(result_text)
-        finding_data['description']    = enriched.get('description',    description)
-        finding_data['recommendation'] = enriched.get('recommendation', recommendation)
+        finding_data['description']    = _sanitize_for_sysreptor(enriched.get('description',    description))
+        finding_data['recommendation'] = _sanitize_for_sysreptor(enriched.get('recommendation', recommendation))
 
         time.sleep(1)
 
@@ -256,6 +256,50 @@ Respond with ONLY this JSON, no extra text:
 # ---------------------------------------------------------------------------
 # Parser
 # ---------------------------------------------------------------------------
+
+def _sanitize_for_sysreptor(text):
+    """
+    Escape raw HTML tags that break SysReptor's Vue template compiler.
+    SysReptor compiles markdown as Vue templates, so raw <script>, <style>,
+    and other HTML tags in finding content cause compilation errors.
+
+    Strategy:
+    - Strip common ZAP HTML formatting tags (p, br, li, ul, ol, b, strong, etc.)
+    - Wrap any remaining HTML tags (like <script>, <iframe>, <style>) in
+      inline code backticks so they render as literal text, not live HTML.
+    """
+    import re as _re
+
+    if not text:
+        return ''
+
+    # Strip ZAP's HTML formatting tags but keep their content
+    formatting_tags = r'</?(?:p|br|div|span|ul|ol|li|b|strong|i|em|a|table|tr|td|th|thead|tbody|h[1-6]|pre|code|blockquote)(?:\s[^>]*)?\s*/?>'
+    text = _re.sub(formatting_tags, '\n', text, flags=_re.IGNORECASE)
+
+    # Replace &nbsp; and other common entities
+    text = text.replace('&nbsp;', ' ')
+    text = text.replace('&lt;', '<')
+    text = text.replace('&gt;', '>')
+    text = text.replace('&amp;', '&')
+    text = text.replace('&quot;', '"')
+
+    # Now escape any remaining HTML-like tags by wrapping in backticks
+    # This catches <script>, <style>, <iframe>, <object>, <embed>, etc.
+    def _wrap_in_code(match):
+        tag = match.group(0)
+        return f'`{tag}`'
+
+    text = _re.sub(r'</?(?:script|style|iframe|object|embed|link|meta|svg|math)(?:\s[^>]*)?\s*/?>', _wrap_in_code, text, flags=_re.IGNORECASE)
+
+    # Also escape any generic tags that look like payloads (e.g. <img onerror=...>)
+    text = _re.sub(r'<(?:img|input|button|form|textarea|select)\s[^>]*>', _wrap_in_code, text, flags=_re.IGNORECASE)
+
+    # Collapse multiple newlines
+    text = _re.sub(r'\n{3,}', '\n\n', text)
+
+    return text.strip()
+
 
 def parse_zap_to_sysreptor(zap_json_path, use_ai=True, progress_cb=None):
     with open(zap_json_path) as f:
@@ -278,8 +322,8 @@ def parse_zap_to_sysreptor(zap_json_path, use_ai=True, progress_cb=None):
         title          = alert.get('alert', 'Untitled Finding')
         riskdesc       = alert.get('riskdesc', 'Low (Default)')
         severity       = severity_map.get(riskdesc.split(' ')[0], 'low')
-        description    = alert.get('desc', '')
-        recommendation = alert.get('solution', '')
+        description    = _sanitize_for_sysreptor(alert.get('desc', ''))
+        recommendation = _sanitize_for_sysreptor(alert.get('solution', ''))
 
         references = []
         ref_str = alert.get('reference', '')
