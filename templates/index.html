@@ -256,6 +256,20 @@
         .empty-state p { font-size: .95em; }
 
         /* ── Jobs queue panel ── */
+        .url-input-wrapper {
+            display: flex; gap: 8px; align-items: center;
+        }
+        .url-input-wrapper input { flex: 1; }
+        .url-tag {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: #e8f5ee; color: var(--green-dark); padding: 4px 10px;
+            border-radius: 6px; font-size: .82em; font-family: monospace;
+            margin: 3px 4px 3px 0;
+        }
+        .url-tag button {
+            border: none; background: none; color: var(--red); cursor: pointer;
+            font-size: 1.1em; line-height: 1; padding: 0 2px;
+        }
         .job-item {
             display: flex; align-items: center; gap: 12px;
             padding: 12px 14px; border-bottom: 1px solid var(--border);
@@ -318,8 +332,22 @@
 
             <form id="scanForm">
                 <div class="form-group">
-                    <label for="targetUrl">Target URL</label>
-                    <input type="url" id="targetUrl" placeholder="https://example.com" required>
+                    <label for="targetUrl">Target URLs</label>
+                    <div class="url-input-wrapper">
+                        <input type="url" id="targetUrl" placeholder="https://example.com" >
+                        <button type="button" class="btn btn-primary" style="padding:10px 16px;flex-shrink:0" onclick="addUrlToList()">+ Add</button>
+                    </div>
+                    <span class="field-hint">Enter URLs one at a time, or paste multiple (one per line) into the box below</span>
+                </div>
+                <div class="form-group">
+                    <textarea id="bulkUrls" rows="3" placeholder="Paste multiple URLs here — one per line&#10;https://app1.example.com&#10;https://app2.example.com&#10;https://api.example.com"
+                        style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:8px;font-family:monospace;font-size:.85em;resize:vertical"></textarea>
+                </div>
+                <div id="urlQueuePreview" style="display:none;margin-bottom:16px">
+                    <label style="font-size:.85em;font-weight:600;color:var(--muted);margin-bottom:6px;display:block">
+                        Queued URLs (<span id="urlCount">0</span>):
+                    </label>
+                    <div id="urlQueueList" style="max-height:120px;overflow-y:auto;background:var(--bg);border-radius:6px;padding:8px"></div>
                 </div>
                 <div class="checkbox-group">
                     <input type="checkbox" id="useAI" checked>
@@ -426,45 +454,86 @@ function setStatus(id, ok, yes, no) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Scanner form — supports multiple simultaneous scans
+// Scanner form — supports multiple simultaneous scans + batch URLs
 // ─────────────────────────────────────────────────────────────────────────────
-const activeJobs = []; // [{job_id, url, status, progress, message, result}]
+const activeJobs = [];
+let queuedUrls = [];
 
 document.getElementById('exportReptor').addEventListener('change', function() {
     document.getElementById('projectNameGroup').style.display = this.checked ? 'block' : 'none';
 });
 
+function addUrlToList() {
+    const input = document.getElementById('targetUrl');
+    const url = input.value.trim();
+    if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+        if (!queuedUrls.includes(url)) { queuedUrls.push(url); renderUrlQueue(); }
+        input.value = '';
+    }
+    input.focus();
+}
+
+document.getElementById('targetUrl').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); addUrlToList(); }
+});
+
+function removeUrlFromQueue(index) { queuedUrls.splice(index, 1); renderUrlQueue(); }
+
+function renderUrlQueue() {
+    const preview = document.getElementById('urlQueuePreview');
+    const list = document.getElementById('urlQueueList');
+    const count = document.getElementById('urlCount');
+    if (queuedUrls.length === 0) { preview.style.display = 'none'; return; }
+    preview.style.display = 'block';
+    count.textContent = queuedUrls.length;
+    list.innerHTML = queuedUrls.map((u, i) =>
+        `<span class="url-tag">${x(u)}<button onclick="removeUrlFromQueue(${i})">×</button></span>`
+    ).join('');
+}
+
+function collectUrls() {
+    const urls = [...queuedUrls];
+    const single = document.getElementById('targetUrl').value.trim();
+    if (single && (single.startsWith('http://') || single.startsWith('https://')) && !urls.includes(single)) urls.push(single);
+    const bulk = document.getElementById('bulkUrls').value.trim();
+    if (bulk) {
+        bulk.split('\n').forEach(line => {
+            const u = line.trim();
+            if (u && (u.startsWith('http://') || u.startsWith('https://')) && !urls.includes(u)) urls.push(u);
+        });
+    }
+    return urls;
+}
+
 document.getElementById('scanForm').addEventListener('submit', async function(e) {
     e.preventDefault();
+    const urls = collectUrls();
+    if (urls.length === 0) { alert('Please enter at least one URL to scan.'); return; }
 
-    const url = document.getElementById('targetUrl').value.trim();
-    const payload = {
-        url,
-        use_ai:             document.getElementById('useAI').checked,
-        export_to_sysreptor:document.getElementById('exportReptor').checked,
-        project_name:       document.getElementById('projectName').value.trim()
-    };
+    const useAi = document.getElementById('useAI').checked;
+    const exportReptor = document.getElementById('exportReptor').checked;
+    const projectName = document.getElementById('projectName').value.trim();
 
-    try {
-        const kickoff = await fetch('/api/scan', {
-            method: 'POST',
-            headers: {'Content-Type':'application/json'},
-            body: JSON.stringify(payload)
-        });
-        if (!kickoff.ok) {
-            const err = await kickoff.json();
-            alert('Error: ' + (err.error || 'Failed to start scan'));
-            return;
+    for (const url of urls) {
+        const payload = { url, use_ai: useAi, export_to_sysreptor: exportReptor, project_name: projectName };
+        try {
+            const kickoff = await fetch('/api/scan', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+            if (!kickoff.ok) {
+                const err = await kickoff.json();
+                activeJobs.unshift({ job_id:null, url, status:'error', progress:0, message:err.error||'Failed to start', result:null });
+                continue;
+            }
+            const { job_id } = await kickoff.json();
+            activeJobs.unshift({ job_id, url, status:'running', progress:0, message:'Queued…', result:null });
+            pollJobAsync(job_id);
+        } catch(err) {
+            activeJobs.unshift({ job_id:null, url, status:'error', progress:0, message:'Network error: '+err.message, result:null });
         }
-        const { job_id } = await kickoff.json();
-
-        activeJobs.unshift({ job_id, url, status: 'running', progress: 0, message: 'Queued…', result: null });
-        renderJobs();
-        pollJobAsync(job_id);
-        document.getElementById('targetUrl').value = '';
-    } catch(err) {
-        alert('Network error: ' + err.message);
     }
+    renderJobs();
+    queuedUrls = []; renderUrlQueue();
+    document.getElementById('targetUrl').value = '';
+    document.getElementById('bulkUrls').value = '';
 });
 
 function pollJobAsync(job_id) {
