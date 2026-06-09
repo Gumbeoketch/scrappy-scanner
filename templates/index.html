@@ -255,6 +255,25 @@
         .empty-state .icon { font-size: 3em; margin-bottom: 12px; }
         .empty-state p { font-size: .95em; }
 
+        /* ── Jobs queue panel ── */
+        .job-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 14px; border-bottom: 1px solid var(--border);
+            transition: background .15s; cursor: pointer;
+        }
+        .job-item:last-child { border-bottom: none; }
+        .job-item:hover { background: var(--bg); }
+        .job-item .job-url { flex: 1; font-family: monospace; font-size: .85em; word-break: break-all; color: var(--text); }
+        .job-item .job-status {
+            padding: 4px 10px; border-radius: 12px;
+            font-size: .78em; font-weight: 700; text-transform: uppercase; flex-shrink: 0;
+        }
+        .job-running  { background: #fff3cd; color: #92400e; }
+        .job-done     { background: #d1fae5; color: #065f46; }
+        .job-error    { background: #fee2e2; color: #b91c1c; }
+        .job-progress { font-size: .8em; color: var(--muted); flex-shrink: 0; min-width: 50px; text-align: right; }
+        .job-msg { font-size: .78em; color: var(--muted); margin-top: 3px; }
+
         /* ── Responsive ── */
         @media (max-width: 768px) {
             .header { flex-direction: column; }
@@ -316,11 +335,12 @@
                 </div>
                 <button type="submit" id="scanBtn" class="btn btn-primary">🔍 Start Scan</button>
             </form>
+        </div>
 
-            <div id="statusBar" class="status-bar">
-                <div class="spinner" id="statusSpinner"></div>
-                <span id="statusText">Initialising…</span>
-            </div>
+        <!-- Active / completed scans panel -->
+        <div id="jobsPanel" class="card" style="display:none">
+            <div class="card-title">⚡ Scan Queue</div>
+            <div id="jobsList"></div>
         </div>
 
         <!-- Results -->
@@ -406,8 +426,10 @@ function setStatus(id, ok, yes, no) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Scanner form
+// Scanner form — supports multiple simultaneous scans
 // ─────────────────────────────────────────────────────────────────────────────
+const activeJobs = []; // [{job_id, url, status, progress, message, result}]
+
 document.getElementById('exportReptor').addEventListener('change', function() {
     document.getElementById('projectNameGroup').style.display = this.checked ? 'block' : 'none';
 });
@@ -415,94 +437,84 @@ document.getElementById('exportReptor').addEventListener('change', function() {
 document.getElementById('scanForm').addEventListener('submit', async function(e) {
     e.preventDefault();
 
-    const btn  = document.getElementById('scanBtn');
-    const bar  = document.getElementById('statusBar');
-
-    document.getElementById('resultsSection').style.display = 'none';
-
-    btn.disabled = true;
-    btn.innerHTML = '<div class="spinner"></div> Scanning…';
-    bar.className = 'status-bar active';
-    document.getElementById('statusSpinner').style.display = 'inline-block';
-    document.getElementById('statusText').textContent = 'Submitting scan request…';
-
+    const url = document.getElementById('targetUrl').value.trim();
     const payload = {
-        url:                document.getElementById('targetUrl').value.trim(),
+        url,
         use_ai:             document.getElementById('useAI').checked,
         export_to_sysreptor:document.getElementById('exportReptor').checked,
         project_name:       document.getElementById('projectName').value.trim()
     };
 
     try {
-        // Step 1: kick off the job — returns immediately with a job_id
         const kickoff = await fetch('/api/scan', {
             method: 'POST',
             headers: {'Content-Type':'application/json'},
             body: JSON.stringify(payload)
         });
-
         if (!kickoff.ok) {
             const err = await kickoff.json();
-            throw new Error(err.error || 'Failed to start scan');
+            alert('Error: ' + (err.error || 'Failed to start scan'));
+            return;
         }
-
         const { job_id } = await kickoff.json();
 
-        // Step 2: poll for completion
-        await pollJob(job_id);
-
+        activeJobs.unshift({ job_id, url, status: 'running', progress: 0, message: 'Queued…', result: null });
+        renderJobs();
+        pollJobAsync(job_id);
+        document.getElementById('targetUrl').value = '';
     } catch(err) {
-        bar.className = 'status-bar active error';
-        document.getElementById('statusSpinner').style.display = 'none';
-        document.getElementById('statusText').textContent = '❌ ' + err.message;
-        btn.disabled = false;
-        btn.innerHTML = '🔍 Start Scan';
+        alert('Network error: ' + err.message);
     }
 });
 
-async function pollJob(job_id) {
-    const btn  = document.getElementById('scanBtn');
-    const bar  = document.getElementById('statusBar');
-
-    while (true) {
-        await new Promise(r => setTimeout(r, 3000)); // poll every 3s
-
-        let job;
+function pollJobAsync(job_id) {
+    const poll = async () => {
         try {
             const res = await fetch(`/api/scan/status/${job_id}`);
-            job = await res.json();
+            const job = await res.json();
+            const entry = activeJobs.find(j => j.job_id === job_id);
+            if (!entry) return;
+            entry.status   = job.status;
+            entry.progress = job.progress || 0;
+            entry.message  = job.message  || '';
+            entry.result   = job.result   || null;
+            renderJobs();
+            if (job.status === 'running') setTimeout(poll, 3000);
         } catch(e) {
-            // transient network hiccup — keep trying
-            document.getElementById('statusText').textContent =
-                '⏳ Waiting for server response…';
-            continue;
+            setTimeout(poll, 5000);
         }
+    };
+    poll();
+}
 
-        // Update progress bar message
-        const pct  = job.progress || 0;
-        const msg  = job.message  || 'Working…';
-        document.getElementById('statusText').textContent =
-            `[${pct}%] ${msg}`;
+function renderJobs() {
+    const panel = document.getElementById('jobsPanel');
+    const list  = document.getElementById('jobsList');
+    if (activeJobs.length === 0) { panel.style.display = 'none'; return; }
+    panel.style.display = 'block';
+    list.innerHTML = activeJobs.map((j, i) => {
+        const statusClass = j.status === 'done' ? 'job-done' : j.status === 'error' ? 'job-error' : 'job-running';
+        const statusLabel = j.status === 'done' ? '✅ Done' : j.status === 'error' ? '❌ Failed' : `${j.progress}%`;
+        const clickAttr   = j.status === 'done' ? `onclick="viewJobResult(${i})"` : '';
+        const msg         = j.status !== 'done' ? `<div class="job-msg">${x(j.message)}</div>` : '';
+        return `
+        <div class="job-item" ${clickAttr}>
+            <div style="flex:1">
+                <div class="job-url">${x(j.url)}</div>
+                ${msg}
+            </div>
+            <span class="job-status ${statusClass}">${statusLabel}</span>
+            ${j.status === 'running' ? '<div class="spinner"></div>' : ''}
+        </div>`;
+    }).join('');
+}
 
-        if (job.status === 'done') {
-            showResults(job.result);
-            bar.className = 'status-bar active success';
-            document.getElementById('statusSpinner').style.display = 'none';
-            document.getElementById('statusText').textContent =
-                `✅ Scan complete — ${job.result.findings_count} finding(s) found`;
-            btn.disabled = false;
-            btn.innerHTML = '🔍 Start Scan';
-            return;
-        }
-
-        if (job.status === 'error') {
-            bar.className = 'status-bar active error';
-            document.getElementById('statusSpinner').style.display = 'none';
-            document.getElementById('statusText').textContent = '❌ ' + job.message;
-            btn.disabled = false;
-            btn.innerHTML = '🔍 Start Scan';
-            return;
-        }
+function viewJobResult(index) {
+    const job = activeJobs[index];
+    if (job && job.result) {
+        showResults(job.result);
+        document.getElementById('resultsSection').style.display = 'block';
+        document.getElementById('resultsSection').scrollIntoView({behavior:'smooth'});
     }
 }
 
