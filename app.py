@@ -44,6 +44,9 @@ REPTOR_BIN = _find_reptor()
 _jobs: dict = {}
 _jobs_lock = threading.Lock()
 
+# Lock for Gemini API calls (gRPC is not thread-safe on Linux)
+_gemini_lock = threading.Lock()
+
 
 # ---------------------------------------------------------------------------
 # Environment
@@ -161,7 +164,17 @@ def run_zap_scan(target_url, output_dir):
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
 
     if not scan_json.exists():
-        raise Exception(f"ZAP scan failed: {result.stderr or result.stdout}")
+        # Filter out known non-fatal noise from stderr
+        stderr = result.stderr or ''
+        stdout = result.stdout or ''
+        error_msg = stderr + stdout
+        # Ignore gRPC epoll warnings that leak from the Gemini library
+        noise_patterns = ['ev_epoll1_linux', 'Epoll1Poller']
+        filtered_lines = [
+            l for l in error_msg.splitlines()
+            if not any(p in l for p in noise_patterns)
+        ]
+        raise Exception(f"ZAP scan failed: {chr(10).join(filtered_lines[:20])}")
 
     return {
         'json_path': scan_json,
@@ -209,7 +222,8 @@ Respond with ONLY this JSON, no extra text:
 {{"description": "2-3 sentences: what it is, why it's dangerous, attack vector", "recommendation": "3-5 numbered steps: specific code/config fixes a developer can action immediately"}}"""
 
     try:
-        response = model.generate_content(prompt)
+        with _gemini_lock:
+            response = model.generate_content(prompt)
 
         if not response.parts:
             print(f"  ⚠ Skipping '{title}': blocked by safety filter")
