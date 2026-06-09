@@ -1,0 +1,16 @@
+[Unit]
+Description=Letshego Group Security Scanner
+After=network.target docker.service
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/home/ec2-user/scrappy-scanner
+ExecStart=/home/ec2-user/scrappy-scanner/.venv/bin/python3 app.py
+Restart=always
+RestartSec=5
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/home/ec2-user/scrappy-scanner/.venv/bin
+
+[Install]
+WantedBy=multi-user.target
