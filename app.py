@@ -376,10 +376,21 @@ def export_to_sysreptor(findings_data, project_name):
     if reptor_template_id:
         cmd.extend(['--template', reptor_template_id])
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    # Suppress gRPC fork warnings that pollute stderr
+    env = os.environ.copy()
+    env['GRPC_VERBOSITY'] = 'ERROR'
+    env['GRPC_POLL_STRATEGY'] = 'poll'
 
-    if result.returncode != 0:
-        raise Exception(f'Failed to create project: {result.stderr}')
+    result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+
+    # Filter gRPC noise from stderr before checking for real errors
+    real_stderr = '\n'.join(
+        l for l in (result.stderr or '').splitlines()
+        if 'ev_poll_posix' not in l and 'ev_epoll' not in l and 'FD from fork' not in l
+    ).strip()
+
+    if result.returncode != 0 and real_stderr:
+        raise Exception(f'Failed to create project: {real_stderr}')
 
     combined = result.stdout + result.stderr
 
@@ -411,11 +422,17 @@ def export_to_sysreptor(findings_data, project_name):
         [REPTOR_BIN, '--server', reptor_server, '--token', reptor_api_key, 'pushproject'],
         input=json.dumps(findings_data),
         capture_output=True,
-        text=True
+        text=True,
+        env=env
     )
 
-    if push.returncode != 0:
-        raise Exception(f'Failed to push findings: {push.stderr}')
+    push_stderr = '\n'.join(
+        l for l in (push.stderr or '').splitlines()
+        if 'ev_poll_posix' not in l and 'ev_epoll' not in l and 'FD from fork' not in l
+    ).strip()
+
+    if push.returncode != 0 and push_stderr:
+        raise Exception(f'Failed to push findings: {push_stderr}')
 
     return {'project_id': project_id, 'project_name': project_name}
 
