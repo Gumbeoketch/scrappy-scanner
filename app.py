@@ -126,6 +126,59 @@ def record_scan(target_url, findings):
     return history['scans'][key]
 
 
+def _auto_import_to_tracker(target_url, findings):
+    """
+    Automatically import scan findings into the vulnerability tracker.
+    Deduplicates by title + normalised URL — if the same finding already
+    exists for the same URL, it updates the date but doesn't create a duplicate.
+    """
+    data = load_tracker()
+    existing = data.get('vulnerabilities', [])
+    norm_url = normalise_url(target_url)
+
+    # Build a set of existing (title, url) for fast lookup
+    existing_keys = set()
+    for v in existing:
+        key = (v.get('title', '').lower(), normalise_url(v.get('url', '')))
+        existing_keys.add(key)
+
+    added = 0
+    today = datetime.utcnow().strftime('%Y-%m-%d')
+
+    for f in findings:
+        fd = f.get('data', {})
+        title = fd.get('title', 'Untitled')
+        dedup_key = (title.lower(), norm_url)
+
+        if dedup_key in existing_keys:
+            # Already tracked — update date_updated on the existing entry
+            for v in existing:
+                if v.get('title', '').lower() == title.lower() and normalise_url(v.get('url', '')) == norm_url:
+                    v['date_updated'] = today
+                    break
+            continue
+
+        vuln = {
+            'id': str(uuid.uuid4())[:8],
+            'title': title,
+            'severity': fd.get('severity', 'info'),
+            'status': 'open',
+            'url': target_url,
+            'team': '',
+            'description': fd.get('description', '')[:500],
+            'date_reported': today,
+            'date_updated': today,
+            'notes': ''
+        }
+        existing.insert(0, vuln)
+        existing_keys.add(dedup_key)
+        added += 1
+
+    data['vulnerabilities'] = existing
+    save_tracker(data)
+    print(f"[Tracker] Imported {added} new findings for {target_url} ({len(findings) - added} duplicates skipped)")
+
+
 # ---------------------------------------------------------------------------
 # Scanner
 # ---------------------------------------------------------------------------
@@ -400,6 +453,9 @@ def _run_scan_job(job_id, target_url, use_ai, export_reptor, project_name):
 
         update('running', 90, 'Recording to dashboard…')
         history_entry = record_scan(target_url, findings_data['findings'])
+
+        # Auto-import findings into the vulnerability tracker (deduped)
+        _auto_import_to_tracker(target_url, findings_data['findings'])
 
         result = {
             'success': True,
