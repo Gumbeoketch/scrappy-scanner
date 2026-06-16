@@ -319,6 +319,36 @@
         .status-closed       { background: #e5e7eb; color: #374151; }
         .status-blocked      { background: #fee2e2; color: #b91c1c; }
         .status-risk_accepted { background: #fff3cd; color: #92400e; }
+
+        /* ── URL group cards ── */
+        .url-group {
+            background: white; border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0,0,0,.06);
+            margin-bottom: 16px; overflow: hidden;
+        }
+        .url-group-header {
+            display: flex; align-items: center; gap: 14px;
+            padding: 16px 20px; cursor: pointer;
+            transition: background .15s; border-bottom: 1px solid transparent;
+        }
+        .url-group-header:hover { background: var(--bg); }
+        .url-group-header.expanded { border-bottom-color: var(--border); }
+        .url-group-url {
+            flex: 1; font-family: monospace; font-size: .9em;
+            font-weight: 600; color: var(--text); word-break: break-all;
+        }
+        .url-group-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+        .url-group-count {
+            padding: 4px 10px; border-radius: 12px;
+            font-size: .75em; font-weight: 700;
+        }
+        .url-group-toggle {
+            font-size: .85em; color: var(--muted); flex-shrink: 0;
+            transition: transform .2s;
+        }
+        .url-group-toggle.open { transform: rotate(180deg); }
+        .url-group-body { display: none; padding: 0 20px 16px; }
+        .url-group-body.open { display: block; }
     </style>
 </head>
 <body>
@@ -456,56 +486,10 @@
             <div id="trackerStats" class="dash-top"></div>
         </div>
 
-        <!-- Add new vulnerability -->
-        <div class="card">
-            <div class="card-title" style="justify-content:space-between">
-                <span>➕ Add Vulnerability</span>
-                <button class="btn btn-primary" style="font-size:.82em;padding:7px 14px" onclick="toggleAddForm()">Toggle Form</button>
-            </div>
-            <div id="addVulnForm" style="display:none">
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-                    <div class="form-group">
-                        <label>Title</label>
-                        <input type="text" id="tvTitle" placeholder="e.g. SQL Injection in /api/users">
-                    </div>
-                    <div class="form-group">
-                        <label>URL / Asset</label>
-                        <input type="text" id="tvUrl" placeholder="https://app.example.com">
-                    </div>
-                </div>
-                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
-                    <div class="form-group">
-                        <label>Severity</label>
-                        <select id="tvSeverity" style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px">
-                            <option value="critical">Critical</option>
-                            <option value="high">High</option>
-                            <option value="medium" selected>Medium</option>
-                            <option value="low">Low</option>
-                            <option value="info">Info</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Team Responsible</label>
-                        <input type="text" id="tvTeam" placeholder="e.g. Backend Team">
-                    </div>
-                    <div class="form-group">
-                        <label>Date Reported</label>
-                        <input type="date" id="tvDate">
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Description</label>
-                    <textarea id="tvDesc" rows="2" placeholder="Brief description…"
-                        style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:.9em;resize:vertical"></textarea>
-                </div>
-                <button class="btn btn-primary" onclick="addVulnerability()">Add to Tracker</button>
-            </div>
-        </div>
-
         <!-- Filters -->
         <div class="card">
             <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-                <span style="font-size:.85em;font-weight:600;color:var(--muted)">Filter:</span>
+                <span style="font-size:.85em;font-weight:600;color:var(--muted)">Filter by status:</span>
                 <button class="filter-btn filter-all active" onclick="filterTracker('all',this)">All</button>
                 <button class="filter-btn" style="color:#065f46" onclick="filterTracker('open',this)">Open</button>
                 <button class="filter-btn" style="color:#b91c1c" onclick="filterTracker('blocked',this)">Blocked</button>
@@ -514,10 +498,8 @@
             </div>
         </div>
 
-        <!-- Vulnerability list -->
-        <div class="card">
-            <div id="trackerList"></div>
-        </div>
+        <!-- URL-grouped vulnerability list -->
+        <div id="trackerList"></div>
 
     </div><!-- /tab-tracker -->
 
@@ -885,26 +867,18 @@ function x(str) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Vulnerability Tracker
+// Vulnerability Tracker — grouped by URL
 // ─────────────────────────────────────────────────────────────────────────────
 let trackerFilter = 'all';
-
-function toggleAddForm() {
-    const el = document.getElementById('addVulnForm');
-    el.style.display = el.style.display === 'none' ? 'block' : 'none';
-    if (el.style.display === 'block' && !document.getElementById('tvDate').value) {
-        document.getElementById('tvDate').value = new Date().toISOString().split('T')[0];
-    }
-}
 
 async function loadTracker() {
     try {
         const params = trackerFilter !== 'all' ? `?status=${trackerFilter}` : '';
         const d = await fetch('/api/tracker' + params).then(r => r.json());
         renderTrackerStats(d.stats);
-        renderTrackerList(d.vulnerabilities || []);
+        renderTrackerGrouped(d.vulnerabilities || []);
     } catch(e) {
-        document.getElementById('trackerList').innerHTML = '<p style="color:var(--red)">Failed to load tracker.</p>';
+        document.getElementById('trackerList').innerHTML = '<div class="card"><p style="color:var(--red)">Failed to load tracker.</p></div>';
     }
 }
 
@@ -919,65 +893,91 @@ function renderTrackerStats(stats) {
     `;
 }
 
-function renderTrackerList(vulns) {
+function renderTrackerGrouped(vulns) {
     const el = document.getElementById('trackerList');
     if (!vulns.length) {
-        el.innerHTML = `<div class="empty-state"><div class="icon">📋</div><p>No vulnerabilities tracked yet. Add one above or import from a scan.</p></div>`;
+        el.innerHTML = `<div class="card"><div class="empty-state"><div class="icon">📋</div><p>No vulnerabilities tracked yet. Run a scan to populate the tracker automatically.</p></div></div>`;
         return;
     }
-    el.innerHTML = vulns.map(v => {
-        const statusClass = 'status-' + (v.status || 'open');
+
+    // Group by URL
+    const groups = {};
+    vulns.forEach(v => {
+        const url = v.url || 'Unknown';
+        if (!groups[url]) groups[url] = [];
+        groups[url].push(v);
+    });
+
+    el.innerHTML = Object.entries(groups).map(([url, items], gi) => {
+        const counts = {high: 0, medium: 0, low: 0, info: 0, critical: 0};
+        let openCount = 0;
+        items.forEach(v => {
+            counts[v.severity || 'info']++;
+            if (v.status === 'open') openCount++;
+        });
+
+        const badges = [
+            counts.critical ? `<span class="url-group-count" style="background:#fee2e2;color:#b91c1c">${counts.critical}C</span>` : '',
+            counts.high     ? `<span class="url-group-count" style="background:#fee2e2;color:#b91c1c">${counts.high}H</span>` : '',
+            counts.medium   ? `<span class="url-group-count" style="background:#fff3cd;color:#92400e">${counts.medium}M</span>` : '',
+            counts.low      ? `<span class="url-group-count" style="background:#dbeafe;color:#1e40af">${counts.low}L</span>` : '',
+            counts.info     ? `<span class="url-group-count" style="background:#e0f2fe;color:#075985">${counts.info}I</span>` : '',
+        ].filter(Boolean).join('');
+
+        const vulnRows = items.map(v => {
+            const statusClass = 'status-' + (v.status || 'open');
+            return `
+            <div class="vuln-row" style="margin-top:10px">
+                <div class="vuln-header">
+                    <span class="sev-badge sev-${v.severity||'info'}">${v.severity||'info'}</span>
+                    <div class="vuln-title">${x(v.title)}</div>
+                    <span class="job-status ${statusClass}" style="font-size:.72em">${(v.status||'open').replace('_',' ')}</span>
+                </div>
+                ${v.description ? `<p style="font-size:.82em;color:var(--muted);margin-top:6px">${x(v.description).substring(0,150)}</p>` : ''}
+                <div class="vuln-actions">
+                    <select class="status-select" onchange="updateVuln('${v.id}','status',this.value)">
+                        <option value="open" ${v.status==='open'?'selected':''}>Open</option>
+                        <option value="closed" ${v.status==='closed'?'selected':''}>Closed</option>
+                        <option value="blocked" ${v.status==='blocked'?'selected':''}>Blocked</option>
+                        <option value="risk_accepted" ${v.status==='risk_accepted'?'selected':''}>Risk Accepted</option>
+                    </select>
+                    <input class="team-input" placeholder="Assign team…" value="${x(v.team||'')}"
+                        onchange="updateVuln('${v.id}','team',this.value)">
+                    <span style="font-size:.75em;color:var(--muted)">📅 ${v.date_reported||'—'}</span>
+                </div>
+            </div>`;
+        }).join('');
+
         return `
-        <div class="vuln-row">
-            <div class="vuln-header">
-                <span class="sev-badge sev-${v.severity||'info'}">${v.severity||'info'}</span>
-                <div class="vuln-title">${x(v.title)}</div>
-                <span class="job-status ${statusClass}">${(v.status||'open').replace('_',' ')}</span>
+        <div class="url-group">
+            <div class="url-group-header" onclick="toggleUrlGroup(${gi})">
+                <div class="url-group-url">🔗 ${x(url)}</div>
+                <div class="url-group-badges">${badges}</div>
+                <span style="font-size:.82em;color:var(--green);font-weight:700">${openCount} open</span>
+                <span style="font-size:.82em;color:var(--muted)">${items.length} total</span>
+                <span class="url-group-toggle" id="tg-${gi}">▼</span>
             </div>
-            ${v.description ? `<p style="font-size:.85em;color:var(--muted);margin-top:8px">${x(v.description).substring(0,200)}</p>` : ''}
-            <div class="vuln-meta">
-                <span>🔗 ${x(v.url||'—')}</span>
-                <span>📅 Reported: ${v.date_reported||'—'}</span>
-                <span>🔄 Updated: ${v.date_updated||'—'}</span>
-                <span>👥 ${x(v.team||'Unassigned')}</span>
-            </div>
-            <div class="vuln-actions">
-                <select class="status-select" onchange="updateVuln('${v.id}','status',this.value)">
-                    <option value="open" ${v.status==='open'?'selected':''}>Open</option>
-                    <option value="closed" ${v.status==='closed'?'selected':''}>Closed</option>
-                    <option value="blocked" ${v.status==='blocked'?'selected':''}>Blocked</option>
-                    <option value="risk_accepted" ${v.status==='risk_accepted'?'selected':''}>Risk Accepted</option>
-                </select>
-                <input class="team-input" placeholder="Assign team…" value="${x(v.team||'')}"
-                    onchange="updateVuln('${v.id}','team',this.value)">
-                <button class="btn btn-danger" onclick="deleteVuln('${v.id}')">🗑</button>
+            <div class="url-group-body" id="tb-${gi}">
+                ${vulnRows}
             </div>
         </div>`;
     }).join('');
+}
+
+function toggleUrlGroup(gi) {
+    const body   = document.getElementById('tb-' + gi);
+    const toggle = document.getElementById('tg-' + gi);
+    const header = toggle.closest('.url-group-header');
+    const isOpen = body.classList.contains('open');
+    body.classList.toggle('open');
+    toggle.classList.toggle('open');
+    header.classList.toggle('expanded');
 }
 
 function filterTracker(status, btn) {
     trackerFilter = status;
     document.querySelectorAll('#tab-tracker .filter-btn').forEach(b => b.classList.remove('active'));
     if (btn) btn.classList.add('active');
-    loadTracker();
-}
-
-async function addVulnerability() {
-    const payload = {
-        title: document.getElementById('tvTitle').value.trim(),
-        url: document.getElementById('tvUrl').value.trim(),
-        severity: document.getElementById('tvSeverity').value,
-        team: document.getElementById('tvTeam').value.trim(),
-        date_reported: document.getElementById('tvDate').value,
-        description: document.getElementById('tvDesc').value.trim()
-    };
-    if (!payload.title) { alert('Title is required'); return; }
-    await fetch('/api/tracker', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
-    document.getElementById('tvTitle').value = '';
-    document.getElementById('tvUrl').value = '';
-    document.getElementById('tvDesc').value = '';
-    document.getElementById('tvTeam').value = '';
     loadTracker();
 }
 
