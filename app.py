@@ -212,7 +212,7 @@ def run_zap_scan(target_url, output_dir):
         '-J', scan_json.name
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
 
     if not scan_json.exists():
         raise Exception(f"ZAP scan failed: {result.stderr or result.stdout}")
