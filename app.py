@@ -22,6 +22,7 @@ app.config['UPLOAD_FOLDER'] = Path('scans')
 app.config['UPLOAD_FOLDER'].mkdir(exist_ok=True)
 
 HISTORY_FILE = Path('scan_history.json')
+TRACKER_FILE = Path('vuln_tracker.json')
 
 # Resolve reptor binary: prefer the venv running this process,
 # fall back to PATH, then common install locations.
@@ -517,6 +518,139 @@ def download_file(filename):
     if file_path.exists():
         return send_file(file_path, as_attachment=True)
     return jsonify({'error': 'File not found'}), 404
+
+
+# ---------------------------------------------------------------------------
+# Vulnerability Tracker
+# ---------------------------------------------------------------------------
+
+def load_tracker():
+    if TRACKER_FILE.exists():
+        try:
+            with open(TRACKER_FILE) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {'vulnerabilities': []}
+
+
+def save_tracker(data):
+    with open(TRACKER_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
+
+@app.route('/api/tracker', methods=['GET'])
+def tracker_list():
+    """List all tracked vulnerabilities with optional filters."""
+    data = load_tracker()
+    vulns = data.get('vulnerabilities', [])
+
+    # Optional query filters
+    status_filter = request.args.get('status')
+    severity_filter = request.args.get('severity')
+
+    if status_filter:
+        vulns = [v for v in vulns if v.get('status') == status_filter]
+    if severity_filter:
+        vulns = [v for v in vulns if v.get('severity') == severity_filter]
+
+    # Compute stats
+    all_vulns = data.get('vulnerabilities', [])
+    stats = {
+        'total': len(all_vulns),
+        'open': sum(1 for v in all_vulns if v.get('status') == 'open'),
+        'closed': sum(1 for v in all_vulns if v.get('status') == 'closed'),
+        'blocked': sum(1 for v in all_vulns if v.get('status') == 'blocked'),
+        'risk_accepted': sum(1 for v in all_vulns if v.get('status') == 'risk_accepted'),
+    }
+
+    return jsonify({'vulnerabilities': vulns, 'stats': stats})
+
+
+@app.route('/api/tracker', methods=['POST'])
+def tracker_add():
+    """Add a new vulnerability to the tracker."""
+    entry = request.get_json()
+    data = load_tracker()
+
+    vuln = {
+        'id': str(uuid.uuid4())[:8],
+        'title': entry.get('title', 'Untitled'),
+        'severity': entry.get('severity', 'medium'),
+        'status': entry.get('status', 'open'),
+        'url': entry.get('url', ''),
+        'team': entry.get('team', ''),
+        'description': entry.get('description', ''),
+        'date_reported': entry.get('date_reported', datetime.utcnow().strftime('%Y-%m-%d')),
+        'date_updated': datetime.utcnow().strftime('%Y-%m-%d'),
+        'notes': entry.get('notes', '')
+    }
+
+    data['vulnerabilities'].insert(0, vuln)
+    save_tracker(data)
+    return jsonify(vuln), 201
+
+
+@app.route('/api/tracker/<vuln_id>', methods=['PATCH'])
+def tracker_update(vuln_id):
+    """Update a tracked vulnerability (status, team, notes, etc.)."""
+    updates = request.get_json()
+    data = load_tracker()
+
+    for v in data['vulnerabilities']:
+        if v['id'] == vuln_id:
+            for key in ['status', 'team', 'notes', 'severity', 'title', 'description']:
+                if key in updates:
+                    v[key] = updates[key]
+            v['date_updated'] = datetime.utcnow().strftime('%Y-%m-%d')
+            save_tracker(data)
+            return jsonify(v)
+
+    return jsonify({'error': 'Vulnerability not found'}), 404
+
+
+@app.route('/api/tracker/<vuln_id>', methods=['DELETE'])
+def tracker_delete(vuln_id):
+    """Delete a tracked vulnerability."""
+    data = load_tracker()
+    original_len = len(data['vulnerabilities'])
+    data['vulnerabilities'] = [v for v in data['vulnerabilities'] if v['id'] != vuln_id]
+    if len(data['vulnerabilities']) < original_len:
+        save_tracker(data)
+        return jsonify({'success': True})
+    return jsonify({'error': 'Not found'}), 404
+
+
+@app.route('/api/tracker/import', methods=['POST'])
+def tracker_import_from_scan():
+    """Import findings from a completed scan into the tracker."""
+    body = request.get_json()
+    findings = body.get('findings', [])
+    url = body.get('url', '')
+    team = body.get('team', '')
+
+    data = load_tracker()
+    added = 0
+
+    for f in findings:
+        fd = f.get('data', {})
+        vuln = {
+            'id': str(uuid.uuid4())[:8],
+            'title': fd.get('title', 'Untitled'),
+            'severity': fd.get('severity', 'info'),
+            'status': 'open',
+            'url': url,
+            'team': team,
+            'description': fd.get('description', '')[:500],
+            'date_reported': datetime.utcnow().strftime('%Y-%m-%d'),
+            'date_updated': datetime.utcnow().strftime('%Y-%m-%d'),
+            'notes': ''
+        }
+        data['vulnerabilities'].insert(0, vuln)
+        added += 1
+
+    save_tracker(data)
+    return jsonify({'imported': added})
 
 
 # ---------------------------------------------------------------------------

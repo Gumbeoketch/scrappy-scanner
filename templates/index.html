@@ -295,6 +295,30 @@
             .header-logo { height: 58px; }
             .config-bar { flex-direction: column; gap: 8px; }
         }
+
+        /* ── Tracker ── */
+        .vuln-row {
+            border: 1px solid var(--border); border-radius: 10px;
+            padding: 16px; margin-bottom: 12px; transition: box-shadow .15s;
+        }
+        .vuln-row:hover { box-shadow: 0 3px 12px rgba(0,0,0,.07); }
+        .vuln-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .vuln-title { flex: 1; font-weight: 600; color: var(--text); font-size: .95em; }
+        .vuln-meta { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; font-size: .82em; color: var(--muted); }
+        .vuln-meta span { display: flex; align-items: center; gap: 4px; }
+        .vuln-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+        .status-select {
+            padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border);
+            font-size: .82em; font-weight: 600; cursor: pointer;
+        }
+        .team-input {
+            padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border);
+            font-size: .82em; width: 160px;
+        }
+        .status-open         { background: #d1fae5; color: #065f46; }
+        .status-closed       { background: #e5e7eb; color: #374151; }
+        .status-blocked      { background: #fee2e2; color: #b91c1c; }
+        .status-risk_accepted { background: #fff3cd; color: #92400e; }
     </style>
 </head>
 <body>
@@ -315,6 +339,7 @@
     <div class="tabs">
         <button class="tab-btn active" onclick="switchTab('scanner', this)">🔍 Scanner</button>
         <button class="tab-btn"        onclick="switchTab('dashboard', this)">📊 Dashboard</button>
+        <button class="tab-btn"        onclick="switchTab('tracker', this)">📋 Tracker</button>
     </div>
 
     <!-- ================================================================ -->
@@ -420,6 +445,82 @@
 
     </div><!-- /tab-dashboard -->
 
+    <!-- ================================================================ -->
+    <!-- TRACKER TAB                                                        -->
+    <!-- ================================================================ -->
+    <div id="tab-tracker" class="tab-panel">
+
+        <!-- Stats row -->
+        <div class="card">
+            <div class="card-title">📋 Vulnerability Tracker</div>
+            <div id="trackerStats" class="dash-top"></div>
+        </div>
+
+        <!-- Add new vulnerability -->
+        <div class="card">
+            <div class="card-title" style="justify-content:space-between">
+                <span>➕ Add Vulnerability</span>
+                <button class="btn btn-primary" style="font-size:.82em;padding:7px 14px" onclick="toggleAddForm()">Toggle Form</button>
+            </div>
+            <div id="addVulnForm" style="display:none">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+                    <div class="form-group">
+                        <label>Title</label>
+                        <input type="text" id="tvTitle" placeholder="e.g. SQL Injection in /api/users">
+                    </div>
+                    <div class="form-group">
+                        <label>URL / Asset</label>
+                        <input type="text" id="tvUrl" placeholder="https://app.example.com">
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+                    <div class="form-group">
+                        <label>Severity</label>
+                        <select id="tvSeverity" style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px">
+                            <option value="critical">Critical</option>
+                            <option value="high">High</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="low">Low</option>
+                            <option value="info">Info</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Team Responsible</label>
+                        <input type="text" id="tvTeam" placeholder="e.g. Backend Team">
+                    </div>
+                    <div class="form-group">
+                        <label>Date Reported</label>
+                        <input type="date" id="tvDate">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="tvDesc" rows="2" placeholder="Brief description…"
+                        style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:.9em;resize:vertical"></textarea>
+                </div>
+                <button class="btn btn-primary" onclick="addVulnerability()">Add to Tracker</button>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="card">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+                <span style="font-size:.85em;font-weight:600;color:var(--muted)">Filter:</span>
+                <button class="filter-btn filter-all active" onclick="filterTracker('all',this)">All</button>
+                <button class="filter-btn" style="color:#065f46" onclick="filterTracker('open',this)">Open</button>
+                <button class="filter-btn" style="color:#b91c1c" onclick="filterTracker('blocked',this)">Blocked</button>
+                <button class="filter-btn" style="color:#92400e" onclick="filterTracker('risk_accepted',this)">Risk Accepted</button>
+                <button class="filter-btn" style="color:#6b7280" onclick="filterTracker('closed',this)">Closed</button>
+            </div>
+        </div>
+
+        <!-- Vulnerability list -->
+        <div class="card">
+            <div id="trackerList"></div>
+        </div>
+
+    </div><!-- /tab-tracker -->
+
 </div><!-- /container -->
 
 <script>
@@ -432,6 +533,7 @@ function switchTab(name, btn) {
     document.getElementById('tab-' + name).classList.add('active');
     btn.classList.add('active');
     if (name === 'dashboard') loadDashboard();
+    if (name === 'tracker') loadTracker();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -780,6 +882,114 @@ function x(str) {
     const d = document.createElement('div');
     d.textContent = String(str || '');
     return d.innerHTML;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Vulnerability Tracker
+// ─────────────────────────────────────────────────────────────────────────────
+let trackerFilter = 'all';
+
+function toggleAddForm() {
+    const el = document.getElementById('addVulnForm');
+    el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    if (el.style.display === 'block' && !document.getElementById('tvDate').value) {
+        document.getElementById('tvDate').value = new Date().toISOString().split('T')[0];
+    }
+}
+
+async function loadTracker() {
+    try {
+        const params = trackerFilter !== 'all' ? `?status=${trackerFilter}` : '';
+        const d = await fetch('/api/tracker' + params).then(r => r.json());
+        renderTrackerStats(d.stats);
+        renderTrackerList(d.vulnerabilities || []);
+    } catch(e) {
+        document.getElementById('trackerList').innerHTML = '<p style="color:var(--red)">Failed to load tracker.</p>';
+    }
+}
+
+function renderTrackerStats(stats) {
+    if (!stats) return;
+    document.getElementById('trackerStats').innerHTML = `
+        <div class="stat-card stat-dark"><div class="val">${stats.total||0}</div><div class="lbl">Total</div></div>
+        <div class="stat-card stat-green"><div class="val">${stats.open||0}</div><div class="lbl">Open</div></div>
+        <div class="stat-card stat-red"><div class="val">${stats.blocked||0}</div><div class="lbl">Blocked</div></div>
+        <div class="stat-card stat-amber"><div class="val">${stats.risk_accepted||0}</div><div class="lbl">Risk Accepted</div></div>
+        <div class="stat-card stat-blue"><div class="val">${stats.closed||0}</div><div class="lbl">Closed</div></div>
+    `;
+}
+
+function renderTrackerList(vulns) {
+    const el = document.getElementById('trackerList');
+    if (!vulns.length) {
+        el.innerHTML = `<div class="empty-state"><div class="icon">📋</div><p>No vulnerabilities tracked yet. Add one above or import from a scan.</p></div>`;
+        return;
+    }
+    el.innerHTML = vulns.map(v => {
+        const statusClass = 'status-' + (v.status || 'open');
+        return `
+        <div class="vuln-row">
+            <div class="vuln-header">
+                <span class="sev-badge sev-${v.severity||'info'}">${v.severity||'info'}</span>
+                <div class="vuln-title">${x(v.title)}</div>
+                <span class="job-status ${statusClass}">${(v.status||'open').replace('_',' ')}</span>
+            </div>
+            ${v.description ? `<p style="font-size:.85em;color:var(--muted);margin-top:8px">${x(v.description).substring(0,200)}</p>` : ''}
+            <div class="vuln-meta">
+                <span>🔗 ${x(v.url||'—')}</span>
+                <span>📅 Reported: ${v.date_reported||'—'}</span>
+                <span>🔄 Updated: ${v.date_updated||'—'}</span>
+                <span>👥 ${x(v.team||'Unassigned')}</span>
+            </div>
+            <div class="vuln-actions">
+                <select class="status-select" onchange="updateVuln('${v.id}','status',this.value)">
+                    <option value="open" ${v.status==='open'?'selected':''}>Open</option>
+                    <option value="closed" ${v.status==='closed'?'selected':''}>Closed</option>
+                    <option value="blocked" ${v.status==='blocked'?'selected':''}>Blocked</option>
+                    <option value="risk_accepted" ${v.status==='risk_accepted'?'selected':''}>Risk Accepted</option>
+                </select>
+                <input class="team-input" placeholder="Assign team…" value="${x(v.team||'')}"
+                    onchange="updateVuln('${v.id}','team',this.value)">
+                <button class="btn btn-danger" onclick="deleteVuln('${v.id}')">🗑</button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function filterTracker(status, btn) {
+    trackerFilter = status;
+    document.querySelectorAll('#tab-tracker .filter-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    loadTracker();
+}
+
+async function addVulnerability() {
+    const payload = {
+        title: document.getElementById('tvTitle').value.trim(),
+        url: document.getElementById('tvUrl').value.trim(),
+        severity: document.getElementById('tvSeverity').value,
+        team: document.getElementById('tvTeam').value.trim(),
+        date_reported: document.getElementById('tvDate').value,
+        description: document.getElementById('tvDesc').value.trim()
+    };
+    if (!payload.title) { alert('Title is required'); return; }
+    await fetch('/api/tracker', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+    document.getElementById('tvTitle').value = '';
+    document.getElementById('tvUrl').value = '';
+    document.getElementById('tvDesc').value = '';
+    document.getElementById('tvTeam').value = '';
+    loadTracker();
+}
+
+async function updateVuln(id, field, value) {
+    await fetch(`/api/tracker/${id}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({[field]:value}) });
+    loadTracker();
+}
+
+async function deleteVuln(id) {
+    if (!confirm('Delete this vulnerability from the tracker?')) return;
+    await fetch(`/api/tracker/${id}`, { method:'DELETE' });
+    loadTracker();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
