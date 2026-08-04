@@ -116,6 +116,19 @@ jobs:
           # token (the action passes `args` as one argument).
           args: --enableExperimental
 
+      - name: Inspect dependency-check output
+        id: dc_report
+        if: always()
+        run: |
+          echo "Contents of reports/ :"
+          ls -la reports 2>/dev/null || echo "  (reports directory was not created)"
+          if [ -f reports/dependency-check-report.sarif ]; then
+            echo "sarif=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sarif=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No SARIF report was produced by dependency-check; skipping code-scanning upload."
+          fi
+
       - name: Upload dependency-check reports (artifact)
         if: always()
         uses: actions/upload-artifact@v4
@@ -125,9 +138,9 @@ jobs:
           if-no-files-found: warn
 
       - name: Upload dependency-check SARIF
-        # Only upload if the scan actually produced a SARIF file, so a skipped or
-        # failed scan can't fail the job on a missing file.
-        if: always() && hashFiles('reports/dependency-check-report.sarif') != ''
+        # Gate on the explicit file check above so a skipped/failed scan (no SARIF)
+        # can never fail this job on a missing file.
+        if: always() && steps.dc_report.outputs.sarif == 'true'
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: reports/dependency-check-report.sarif
