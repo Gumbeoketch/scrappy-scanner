@@ -110,21 +110,25 @@ jobs:
           project: scrappy-scanner-app
           path: "."
           format: "ALL"           # HTML + JSON + SARIF
-          args: >-
-            --nvdApiKey ${{ secrets.NVD_API_KEY }}
-            --enableExperimental
+          out: reports
+          # This action runs with --noupdate and ships the NVD database inside
+          # its image, so no NVD API key is needed here. Keep args to a single
+          # token (the action passes `args` as one argument).
+          args: --enableExperimental
 
       - name: Upload dependency-check reports (artifact)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: dependency-check-report
-          path: ${{ github.workspace }}/reports
+          path: reports
           if-no-files-found: warn
 
       - name: Upload dependency-check SARIF
-        if: always()
+        # Only upload if the scan actually produced a SARIF file, so a skipped or
+        # failed scan can't fail the job on a missing file.
+        if: always() && hashFiles('reports/dependency-check-report.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: ${{ github.workspace }}/reports/dependency-check-report.sarif
+          sarif_file: reports/dependency-check-report.sarif
           category: dependency-check
