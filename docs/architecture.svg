@@ -18,7 +18,7 @@
 
   <!-- Title -->
   <text x="400" y="30" text-anchor="middle" class="text-title" style="font-size:20px">
-    Letshego Group Security Scanner Architecture
+    Security Scanner Architecture
   </text>
 
   <!-- Browser / UI -->
@@ -124,6 +124,6 @@
 
   <!-- Footer -->
   <text x="400" y="895" text-anchor="middle" class="text-small" style="font-size:10px; fill:#aaa">
-    Letshego Group Security Scanner © 2026
+    Security Scanner © 2026
   </text>
 </svg>

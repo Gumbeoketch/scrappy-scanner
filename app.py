@@ -732,7 +732,7 @@ def tracker_import_from_scan():
 
 if __name__ == '__main__':
     print("\n" + "="*60)
-    print("  Letshego Group Security Scanner")
+    print("  Security Scanner")
     print("="*60)
     print(f"\n  Starting server at http://localhost:8000")
     print(f"\n  Configuration:")

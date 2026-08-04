@@ -1,5 +1,5 @@
 [Unit]
-Description=Letshego Group Security Scanner
+Description=Security Scanner
 After=network.target docker.service
 
 [Service]
