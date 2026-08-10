@@ -35,7 +35,7 @@ jobs:
     name: Secrets (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0   # full history so committed secrets are caught
 
@@ -53,7 +53,7 @@ jobs:
 
       - name: Upload gitleaks SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3
         with:
           sarif_file: gitleaks.sarif
           category: gitleaks
@@ -65,9 +65,9 @@ jobs:
     name: SAST (semgrep)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
@@ -89,7 +89,7 @@ jobs:
 
       - name: Upload semgrep SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3
         with:
           sarif_file: semgrep.sarif
           category: semgrep
@@ -101,10 +101,10 @@ jobs:
     name: SCA (OWASP dependency-check)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Run OWASP Dependency-Check
-        uses: dependency-check/Dependency-Check_Action@main
+        uses: dependency-check/Dependency-Check_Action@1e54355a8b4c8abaa8cc7d0b70aa655a3bb15a6c # main (pinned)
         continue-on-error: true   # report-only; tighten with --failOnCVSS once triaged
         with:
           project: scrappy-scanner-app
@@ -131,7 +131,7 @@ jobs:
 
       - name: Upload dependency-check reports (artifact)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dependency-check-report
           path: reports
@@ -141,7 +141,7 @@ jobs:
         # Gate on the explicit file check above so a skipped/failed scan (no SARIF)
         # can never fail this job on a missing file.
         if: always() && steps.dc_report.outputs.sarif == 'true'
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3
         with:
           sarif_file: reports/dependency-check-report.sarif
           category: dependency-check

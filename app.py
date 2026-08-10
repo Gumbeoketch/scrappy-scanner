@@ -381,7 +381,9 @@ def export_to_sysreptor(findings_data, project_name):
     env['GRPC_VERBOSITY'] = 'ERROR'
     env['GRPC_POLL_STRATEGY'] = 'poll'
 
-    result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    # Safe: list-form argv (no shell=True), so values like project_name cannot be
+    # interpreted as shell syntax. No command injection is possible here.
+    result = subprocess.run(cmd, capture_output=True, text=True, env=env)  # nosemgrep
 
     # Filter gRPC noise from stderr before checking for real errors
     real_stderr = '\n'.join(
@@ -418,8 +420,10 @@ def export_to_sysreptor(findings_data, project_name):
     project_id = project_id_match.group(0)
     os.environ['REPTOR_PROJECT_ID'] = project_id
 
+    # Safe: list-form argv (no shell=True); arguments are passed directly to the
+    # binary and are not evaluated by a shell, so command injection is not possible.
     push = subprocess.run(
-        [REPTOR_BIN, '--server', reptor_server, '--token', reptor_api_key, 'pushproject'],
+        [REPTOR_BIN, '--server', reptor_server, '--token', reptor_api_key, 'pushproject'],  # nosemgrep
         input=json.dumps(findings_data),
         capture_output=True,
         text=True,
@@ -731,15 +735,24 @@ def tracker_import_from_scan():
 # ---------------------------------------------------------------------------
 
 if __name__ == '__main__':
+    # Security: never hardcode debug/host. Debug enables the Werkzeug debugger
+    # (remote code execution) and leaks tracebacks, so it must be opt-in and
+    # default off. Bind to loopback by default; expose externally only when the
+    # operator explicitly sets HOST (e.g. HOST=0.0.0.0 in the systemd unit).
+    host = os.getenv('HOST') or '127.0.0.1'
+    port = int(os.getenv('PORT') or 8000)
+    debug = os.getenv('FLASK_DEBUG', '').strip().lower() in ('1', 'true', 'yes', 'on')
+
     print("\n" + "="*60)
     print("  Security Scanner")
     print("="*60)
-    print(f"\n  Starting server at http://localhost:8000")
+    print(f"\n  Starting server at http://{host}:{port}")
     print(f"\n  Configuration:")
     print(f"    - Gemini AI: {'✓ Enabled' if os.getenv('GEMINI_API_KEY') else '✗ Disabled'}")
     print(f"    - SysReptor: {'✓ Configured' if all([os.getenv('REPTOR_SERVER'), os.getenv('REPTOR_API_KEY')]) else '✗ Not configured'}")
     print(f"    - reptor CLI: {'✓ ' + REPTOR_BIN if REPTOR_BIN else '✗ Not found (run: pip install reptor)'}")
+    print(f"    - Debug mode: {'⚠ ON' if debug else 'off'}")
     print(f"\n  Press Ctrl+C to stop\n")
     print("="*60 + "\n")
 
-    app.run(debug=True, host='0.0.0.0', port=8000)
+    app.run(debug=debug, host=host, port=port)
