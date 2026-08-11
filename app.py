@@ -647,7 +647,7 @@ def tracker_list():
 @app.route('/api/tracker', methods=['POST'])
 def tracker_add():
     """Add a new vulnerability to the tracker."""
-    entry = request.get_json()
+    entry = request.get_json(force=True, silent=True) or {}
     data = load_tracker()
 
     vuln = {
