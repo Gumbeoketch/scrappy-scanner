@@ -391,8 +391,8 @@ def export_to_sysreptor(findings_data, project_name):
         if 'ev_poll_posix' not in l and 'ev_epoll' not in l and 'FD from fork' not in l
     ).strip()
 
-    if result.returncode != 0 and real_stderr:
-        raise Exception(f'Failed to create project: {real_stderr}')
+    if result.returncode != 0:
+        raise Exception(f'Failed to create project: {real_stderr or result.stderr}')
 
     combined = result.stdout + result.stderr
 
