@@ -435,8 +435,8 @@ def export_to_sysreptor(findings_data, project_name):
         if 'ev_poll_posix' not in l and 'ev_epoll' not in l and 'FD from fork' not in l
     ).strip()
 
-    if push.returncode != 0 and push_stderr:
-        raise Exception(f'Failed to push findings: {push_stderr}')
+    if push.returncode != 0:
+        raise Exception(f'Failed to push findings: {push_stderr or push.stderr}')
 
     return {'project_id': project_id, 'project_name': project_name}
 
