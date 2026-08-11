@@ -22,6 +22,7 @@ app.config['UPLOAD_FOLDER'] = Path('scans')
 app.config['UPLOAD_FOLDER'].mkdir(exist_ok=True)
 
 HISTORY_FILE = Path('scan_history.json')
+TRACKER_FILE = Path('vuln_tracker.json')
 
 # Resolve reptor binary: prefer the venv running this process,
 # fall back to PATH, then common install locations.
@@ -128,6 +129,59 @@ def record_scan(target_url, findings):
     return history['scans'][key]
 
 
+def _auto_import_to_tracker(target_url, findings):
+    """
+    Automatically import scan findings into the vulnerability tracker.
+    Deduplicates by title + normalised URL — if the same finding already
+    exists for the same URL, it updates the date but doesn't create a duplicate.
+    """
+    data = load_tracker()
+    existing = data.get('vulnerabilities', [])
+    norm_url = normalise_url(target_url)
+
+    # Build a set of existing (title, url) for fast lookup
+    existing_keys = set()
+    for v in existing:
+        key = (v.get('title', '').lower(), normalise_url(v.get('url', '')))
+        existing_keys.add(key)
+
+    added = 0
+    today = datetime.utcnow().strftime('%Y-%m-%d')
+
+    for f in findings:
+        fd = f.get('data', {})
+        title = fd.get('title', 'Untitled')
+        dedup_key = (title.lower(), norm_url)
+
+        if dedup_key in existing_keys:
+            # Already tracked — update date_updated on the existing entry
+            for v in existing:
+                if v.get('title', '').lower() == title.lower() and normalise_url(v.get('url', '')) == norm_url:
+                    v['date_updated'] = today
+                    break
+            continue
+
+        vuln = {
+            'id': str(uuid.uuid4())[:8],
+            'title': title,
+            'severity': fd.get('severity', 'info'),
+            'status': 'open',
+            'url': target_url,
+            'team': '',
+            'description': fd.get('description', '')[:500],
+            'date_reported': today,
+            'date_updated': today,
+            'notes': ''
+        }
+        existing.insert(0, vuln)
+        existing_keys.add(dedup_key)
+        added += 1
+
+    data['vulnerabilities'] = existing
+    save_tracker(data)
+    print(f"[Tracker] Imported {added} new findings for {target_url} ({len(findings) - added} duplicates skipped)")
+
+
 # ---------------------------------------------------------------------------
 # Scanner
 # ---------------------------------------------------------------------------
@@ -161,7 +215,7 @@ def run_zap_scan(target_url, output_dir):
         '-J', scan_json.name
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
 
     if not scan_json.exists():
         # Filter out known non-fatal noise from stderr
@@ -380,10 +434,23 @@ def export_to_sysreptor(findings_data, project_name):
     if reptor_template_id:
         cmd.extend(['--template', reptor_template_id])
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    # Suppress gRPC fork warnings that pollute stderr
+    env = os.environ.copy()
+    env['GRPC_VERBOSITY'] = 'ERROR'
+    env['GRPC_POLL_STRATEGY'] = 'poll'
+
+    # Safe: list-form argv (no shell=True), so values like project_name cannot be
+    # interpreted as shell syntax. No command injection is possible here.
+    result = subprocess.run(cmd, capture_output=True, text=True, env=env)  # nosemgrep
+
+    # Filter gRPC noise from stderr before checking for real errors
+    real_stderr = '\n'.join(
+        l for l in (result.stderr or '').splitlines()
+        if 'ev_poll_posix' not in l and 'ev_epoll' not in l and 'FD from fork' not in l
+    ).strip()
 
     if result.returncode != 0:
-        raise Exception(f'Failed to create project: {result.stderr}')
+        raise Exception(f'Failed to create project: {real_stderr or result.stderr}')
 
     combined = result.stdout + result.stderr
 
@@ -411,15 +478,23 @@ def export_to_sysreptor(findings_data, project_name):
     project_id = project_id_match.group(0)
     os.environ['REPTOR_PROJECT_ID'] = project_id
 
+    # Safe: list-form argv (no shell=True); arguments are passed directly to the
+    # binary and are not evaluated by a shell, so command injection is not possible.
     push = subprocess.run(
-        [REPTOR_BIN, '--server', reptor_server, '--token', reptor_api_key, 'pushproject'],
+        [REPTOR_BIN, '--server', reptor_server, '--token', reptor_api_key, 'pushproject'],  # nosemgrep
         input=json.dumps(findings_data),
         capture_output=True,
-        text=True
+        text=True,
+        env=env
     )
 
+    push_stderr = '\n'.join(
+        l for l in (push.stderr or '').splitlines()
+        if 'ev_poll_posix' not in l and 'ev_epoll' not in l and 'FD from fork' not in l
+    ).strip()
+
     if push.returncode != 0:
-        raise Exception(f'Failed to push findings: {push.stderr}')
+        raise Exception(f'Failed to push findings: {push_stderr or push.stderr}')
 
     return {'project_id': project_id, 'project_name': project_name}
 
@@ -457,6 +532,9 @@ def _run_scan_job(job_id, target_url, use_ai, export_reptor, project_name):
 
         update('running', 90, 'Recording to dashboard…')
         history_entry = record_scan(target_url, findings_data['findings'])
+
+        # Auto-import findings into the vulnerability tracker (deduped)
+        _auto_import_to_tracker(target_url, findings_data['findings'])
 
         result = {
             'success': True,
@@ -578,19 +656,161 @@ def download_file(filename):
 
 
 # ---------------------------------------------------------------------------
+# Vulnerability Tracker
+# ---------------------------------------------------------------------------
+
+def load_tracker():
+    if TRACKER_FILE.exists():
+        try:
+            with open(TRACKER_FILE) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {'vulnerabilities': []}
+
+
+def save_tracker(data):
+    with open(TRACKER_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
+
+@app.route('/api/tracker', methods=['GET'])
+def tracker_list():
+    """List all tracked vulnerabilities with optional filters."""
+    data = load_tracker()
+    vulns = data.get('vulnerabilities', [])
+
+    # Optional query filters
+    status_filter = request.args.get('status')
+    severity_filter = request.args.get('severity')
+
+    if status_filter:
+        vulns = [v for v in vulns if v.get('status') == status_filter]
+    if severity_filter:
+        vulns = [v for v in vulns if v.get('severity') == severity_filter]
+
+    # Compute stats
+    all_vulns = data.get('vulnerabilities', [])
+    stats = {
+        'total': len(all_vulns),
+        'open': sum(1 for v in all_vulns if v.get('status') == 'open'),
+        'closed': sum(1 for v in all_vulns if v.get('status') == 'closed'),
+        'blocked': sum(1 for v in all_vulns if v.get('status') == 'blocked'),
+        'risk_accepted': sum(1 for v in all_vulns if v.get('status') == 'risk_accepted'),
+    }
+
+    return jsonify({'vulnerabilities': vulns, 'stats': stats})
+
+
+@app.route('/api/tracker', methods=['POST'])
+def tracker_add():
+    """Add a new vulnerability to the tracker."""
+    entry = request.get_json(force=True, silent=True) or {}
+    data = load_tracker()
+
+    vuln = {
+        'id': str(uuid.uuid4())[:8],
+        'title': entry.get('title', 'Untitled'),
+        'severity': entry.get('severity', 'medium'),
+        'status': entry.get('status', 'open'),
+        'url': entry.get('url', ''),
+        'team': entry.get('team', ''),
+        'description': entry.get('description', ''),
+        'date_reported': entry.get('date_reported', datetime.utcnow().strftime('%Y-%m-%d')),
+        'date_updated': datetime.utcnow().strftime('%Y-%m-%d'),
+        'notes': entry.get('notes', '')
+    }
+
+    data['vulnerabilities'].insert(0, vuln)
+    save_tracker(data)
+    return jsonify(vuln), 201
+
+
+@app.route('/api/tracker/<vuln_id>', methods=['PATCH'])
+def tracker_update(vuln_id):
+    """Update a tracked vulnerability (status, team, notes, etc.)."""
+    updates = request.get_json()
+    data = load_tracker()
+
+    for v in data['vulnerabilities']:
+        if v['id'] == vuln_id:
+            for key in ['status', 'team', 'notes', 'severity', 'title', 'description']:
+                if key in updates:
+                    v[key] = updates[key]
+            v['date_updated'] = datetime.utcnow().strftime('%Y-%m-%d')
+            save_tracker(data)
+            return jsonify(v)
+
+    return jsonify({'error': 'Vulnerability not found'}), 404
+
+
+@app.route('/api/tracker/<vuln_id>', methods=['DELETE'])
+def tracker_delete(vuln_id):
+    """Delete a tracked vulnerability."""
+    data = load_tracker()
+    original_len = len(data['vulnerabilities'])
+    data['vulnerabilities'] = [v for v in data['vulnerabilities'] if v['id'] != vuln_id]
+    if len(data['vulnerabilities']) < original_len:
+        save_tracker(data)
+        return jsonify({'success': True})
+    return jsonify({'error': 'Not found'}), 404
+
+
+@app.route('/api/tracker/import', methods=['POST'])
+def tracker_import_from_scan():
+    """Import findings from a completed scan into the tracker."""
+    body = request.get_json()
+    findings = body.get('findings', [])
+    url = body.get('url', '')
+    team = body.get('team', '')
+
+    data = load_tracker()
+    added = 0
+
+    for f in findings:
+        fd = f.get('data', {})
+        vuln = {
+            'id': str(uuid.uuid4())[:8],
+            'title': fd.get('title', 'Untitled'),
+            'severity': fd.get('severity', 'info'),
+            'status': 'open',
+            'url': url,
+            'team': team,
+            'description': fd.get('description', '')[:500],
+            'date_reported': datetime.utcnow().strftime('%Y-%m-%d'),
+            'date_updated': datetime.utcnow().strftime('%Y-%m-%d'),
+            'notes': ''
+        }
+        data['vulnerabilities'].insert(0, vuln)
+        added += 1
+
+    save_tracker(data)
+    return jsonify({'imported': added})
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
 if __name__ == '__main__':
+    # Security: never hardcode debug/host. Debug enables the Werkzeug debugger
+    # (remote code execution) and leaks tracebacks, so it must be opt-in and
+    # default off. Bind to loopback by default; expose externally only when the
+    # operator explicitly sets HOST (e.g. HOST=0.0.0.0 in the systemd unit).
+    host = os.getenv('HOST') or '127.0.0.1'
+    port = int(os.getenv('PORT') or 8000)
+    debug = os.getenv('FLASK_DEBUG', '').strip().lower() in ('1', 'true', 'yes', 'on')
+
     print("\n" + "="*60)
-    print("  Letshego Group Security Scanner")
+    print("  Security Scanner")
     print("="*60)
-    print(f"\n  Starting server at http://localhost:5000")
+    print(f"\n  Starting server at http://{host}:{port}")
     print(f"\n  Configuration:")
     print(f"    - Gemini AI: {'✓ Enabled' if os.getenv('GEMINI_API_KEY') else '✗ Disabled'}")
     print(f"    - SysReptor: {'✓ Configured' if all([os.getenv('REPTOR_SERVER'), os.getenv('REPTOR_API_KEY')]) else '✗ Not configured'}")
     print(f"    - reptor CLI: {'✓ ' + REPTOR_BIN if REPTOR_BIN else '✗ Not found (run: pip install reptor)'}")
+    print(f"    - Debug mode: {'⚠ ON' if debug else 'off'}")
     print(f"\n  Press Ctrl+C to stop\n")
     print("="*60 + "\n")
 
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=debug, host=host, port=port)
