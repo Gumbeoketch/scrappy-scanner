@@ -15,6 +15,7 @@ import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
+import yaml
 from flask import Flask, render_template, request, jsonify, send_file, Response
 import google.generativeai as genai
 
@@ -251,7 +252,146 @@ def sanitize_url_to_filename(url):
     return clean.strip('-') or 'scan'
 
 
-def run_zap_scan(target_url, output_dir):
+def _has_auth_scheme(token):
+    """True if the token already starts with an auth scheme (Bearer/Basic/...)."""
+    return bool(re.match(r'^(bearer|basic|token|apikey)\s', token or '', re.IGNORECASE))
+
+
+def _scrub_secrets(text, secrets):
+    """Redact credential values from tool output before surfacing it."""
+    if not text:
+        return text
+    for s in secrets:
+        if s:
+            text = text.replace(s, '***')
+    return text
+
+
+def _build_zap_plan(target_url, json_name, html_name, auth_type, auth):
+    """
+    Build a ZAP Automation Framework plan (spider + passive scan + reports).
+    For 'userpass' it embeds a form-based authentication context + user so the
+    spider crawls behind the login. Bearer auth is handled separately via the
+    replacer (request header injection), so it needs no context changes here.
+    """
+    context = {
+        'name': 'scan-context',
+        'urls': [target_url],
+        'includePaths': [],
+        'excludePaths': [],
+        'technology': {},
+    }
+    spider_params = {'context': 'scan-context', 'maxDuration': 2, 'maxDepth': 10}
+
+    if auth_type == 'userpass':
+        login_url  = auth.get('login_url') or target_url
+        user_field = (auth.get('username_field') or '').strip() or 'username'
+        pass_field = (auth.get('password_field') or '').strip() or 'password'
+        logged_out = (auth.get('logged_out_regex')
+                      or r'(?i)(log.?in|sign.?in|username|password|unauthor|session.?expir|\b401\b|\b403\b)')
+        context['authentication'] = {
+            'method': 'form',
+            'parameters': {
+                'loginPageUrl': login_url,
+                'loginRequestUrl': login_url,
+                'loginRequestBody': f'{user_field}={{{{username}}}}&{pass_field}={{{{password}}}}',
+            },
+            'verification': {
+                'method': 'response',
+                'loggedInRegex': r'\w',
+                'loggedOutRegex': logged_out,
+                'pollFrequency': 60,
+                'pollUnits': 'requests',
+            },
+        }
+        context['sessionManagement'] = {'method': 'cookie'}
+        context['users'] = [{
+            'name': 'scan-user',
+            'credentials': {
+                'username': auth.get('username', ''),
+                'password': auth.get('password', ''),
+            },
+        }]
+        spider_params['user'] = 'scan-user'
+
+    return {
+        'env': {
+            'contexts': [context],
+            'parameters': {'failOnError': False, 'progressToStdout': True},
+        },
+        'jobs': [
+            {'type': 'passiveScan-config', 'parameters': {'maxAlertsPerRule': 10}},
+            {'type': 'spider', 'parameters': spider_params},
+            {'type': 'passiveScan-wait', 'parameters': {'maxDuration': 5}},
+            {'type': 'report', 'parameters': {
+                'template': 'traditional-json', 'reportDir': '/zap/wrk/',
+                'reportFile': json_name, 'reportTitle': 'ZAP Security Report',
+                'reportDescription': ''}},
+            {'type': 'report', 'parameters': {
+                'template': 'traditional-html', 'reportDir': '/zap/wrk/',
+                'reportFile': html_name, 'reportTitle': 'ZAP Security Report',
+                'reportDescription': ''}},
+        ],
+    }
+
+
+def _run_zap_auth_scan(target_url, output_dir, scan_prefix, scan_json, scan_html, auth_type, auth):
+    """Authenticated scan via the ZAP Automation Framework (bearer or form auth)."""
+    plan = _build_zap_plan(target_url, scan_json.name, scan_html.name, auth_type, auth)
+    plan_path = output_dir / f"{scan_prefix}_plan.yaml"
+    secrets = [auth.get('token'), auth.get('password')]
+
+    try:
+        # The plan may contain credentials — write it readable only by the owner.
+        with open(plan_path, 'w') as f:
+            yaml.safe_dump(plan, f, sort_keys=False)
+        os.chmod(plan_path, 0o600)
+
+        cmd = [
+            'docker', 'run', '--rm',
+            '-v', f"{output_dir.absolute()}:/zap/wrk:rw",
+            '--user', 'root',
+            'ghcr.io/zaproxy/zaproxy:stable',
+            'zap.sh', '-cmd', '-autorun', f'/zap/wrk/{plan_path.name}',
+        ]
+
+        if auth_type == 'bearer':
+            header = (auth.get('header') or '').strip() or 'Authorization'
+            token = (auth.get('token') or '').strip()
+            value = token if _has_auth_scheme(token) else f'Bearer {token}'
+            # Inject the auth header into every request via ZAP's replacer add-on.
+            # Passed as discrete argv entries so the space in "Bearer <token>"
+            # is preserved (no shell parsing involved).
+            cmd += [
+                '-config', 'replacer.full_list(0).description=auth',
+                '-config', 'replacer.full_list(0).enabled=true',
+                '-config', 'replacer.full_list(0).matchtype=REQ_HEADER',
+                '-config', f'replacer.full_list(0).matchstr={header}',
+                '-config', 'replacer.full_list(0).regex=false',
+                '-config', f'replacer.full_list(0).replacement={value}',
+            ]
+
+        # nosemgrep
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+
+        if not scan_json.exists():
+            detail = _scrub_secrets(result.stderr or result.stdout, secrets)
+            raise Exception(f"ZAP authenticated scan failed: {(detail or '')[:800]}")
+
+        return {
+            'json_path': scan_json,
+            'html_path': scan_html,
+            'resource_name': scan_prefix,
+        }
+    finally:
+        # Never leave the credential-bearing plan on disk.
+        try:
+            plan_path.unlink()
+        except OSError:
+            pass
+
+
+def run_zap_scan(target_url, output_dir, auth=None):
     resource_name = sanitize_url_to_filename(target_url)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     scan_prefix = f"{resource_name}_{timestamp}"
@@ -263,6 +403,14 @@ def run_zap_scan(target_url, output_dir):
     # container, without making the directory world-writable.
     output_dir.chmod(0o755)
 
+    auth = auth or {}
+    auth_type = (auth.get('type') or 'none').lower()
+
+    if auth_type in ('bearer', 'userpass'):
+        return _run_zap_auth_scan(target_url, output_dir, scan_prefix,
+                                  scan_json, scan_html, auth_type, auth)
+
+    # --- Unauthenticated baseline scan (default) ---
     cmd = [
         'docker', 'run', '--rm',
         '-v', f"{output_dir.absolute()}:/zap/wrk:rw",
@@ -512,7 +660,7 @@ def index():
     return render_template('index.html')
 
 
-def _run_scan_job(job_id, target_url, use_ai, export_reptor, project_name):
+def _run_scan_job(job_id, target_url, use_ai, export_reptor, project_name, auth=None):
     def update(status, progress, message):
         with _jobs_lock:
             _jobs[job_id].update(status=status, progress=progress, message=message)
@@ -520,8 +668,12 @@ def _run_scan_job(job_id, target_url, use_ai, export_reptor, project_name):
     try:
         output_dir = app.config['UPLOAD_FOLDER']
 
-        update('running', 10, 'Starting ZAP Docker container…')
-        scan_result = run_zap_scan(target_url, output_dir)
+        auth_type = (auth or {}).get('type', 'none')
+        start_msg = ('Starting authenticated ZAP scan…'
+                     if auth_type in ('bearer', 'userpass')
+                     else 'Starting ZAP Docker container…')
+        update('running', 10, start_msg)
+        scan_result = run_zap_scan(target_url, output_dir, auth=auth)
 
         update('running', 60, 'Parsing ZAP findings…')
         findings_data = parse_zap_to_sysreptor(
@@ -578,11 +730,25 @@ def scan_endpoint():
     export_reptor = data.get('export_to_sysreptor', False)
     project_name  = data.get('project_name',
                               f"Security Scan - {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    auth          = data.get('auth') or {}
+    auth_type     = (auth.get('type') or 'none').lower()
 
     if not target_url:
         return jsonify({'error': 'URL is required'}), 400
     if not target_url.startswith(('http://', 'https://')):
         return jsonify({'error': 'URL must start with http:// or https://'}), 400
+
+    # Validate authentication parameters
+    if auth_type not in ('none', 'bearer', 'userpass'):
+        return jsonify({'error': 'Invalid auth type'}), 400
+    if auth_type == 'bearer' and not (auth.get('token') or '').strip():
+        return jsonify({'error': 'A bearer token is required for bearer authentication'}), 400
+    if auth_type == 'userpass':
+        if not ((auth.get('username') or '').strip() and (auth.get('password') or '')):
+            return jsonify({'error': 'Username and password are required for login authentication'}), 400
+        login_url = (auth.get('login_url') or '').strip()
+        if login_url and not login_url.startswith(('http://', 'https://')):
+            return jsonify({'error': 'Login URL must start with http:// or https://'}), 400
 
     job_id = str(uuid.uuid4())
     with _jobs_lock:
@@ -596,7 +762,7 @@ def scan_endpoint():
 
     threading.Thread(
         target=_run_scan_job,
-        args=(job_id, target_url, use_ai, export_reptor, project_name),
+        args=(job_id, target_url, use_ai, export_reptor, project_name, auth),
         daemon=True
     ).start()
 

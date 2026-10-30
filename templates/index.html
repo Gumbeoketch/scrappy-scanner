@@ -413,6 +413,55 @@
                     <label for="projectName">SysReptor Project Name</label>
                     <input type="text" id="projectName" placeholder="Security Assessment – 2025-06-04">
                 </div>
+
+                <!-- ── Authenticated scanning ── -->
+                <div class="form-group">
+                    <label for="authType">🔐 Authentication <span style="font-weight:400;color:var(--muted)">(scan behind a login)</span></label>
+                    <select id="authType" onchange="onAuthTypeChange()"
+                        style="width:100%;padding:11px 14px;border:2px solid var(--border);border-radius:8px;font-size:15px;background:white">
+                        <option value="none">None (unauthenticated)</option>
+                        <option value="bearer">Bearer token (API / OAuth)</option>
+                        <option value="userpass">Username &amp; password (form login)</option>
+                    </select>
+                    <span class="field-hint" style="font-size:.8em;color:var(--muted)">Applies to every URL queued in this scan.</span>
+                </div>
+
+                <div id="authBearerGroup" style="display:none">
+                    <div class="form-group">
+                        <label for="authToken">Bearer token</label>
+                        <input type="password" id="authToken" autocomplete="off"
+                            placeholder="paste token (the 'Bearer ' prefix is added automatically)">
+                        <span class="field-hint" style="font-size:.8em;color:var(--muted)">Sent as an <code>Authorization</code> header on every request.</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="authHeader">Header name (advanced)</label>
+                        <input type="text" id="authHeader" placeholder="Authorization">
+                    </div>
+                </div>
+
+                <div id="authUserpassGroup" style="display:none">
+                    <div class="form-group">
+                        <label for="authLoginUrl">Login URL</label>
+                        <input type="url" id="authLoginUrl" placeholder="https://example.com/login">
+                    </div>
+                    <div class="form-group">
+                        <label for="authUsername">Username</label>
+                        <input type="text" id="authUsername" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="authPassword">Password</label>
+                        <input type="password" id="authPassword" autocomplete="new-password">
+                    </div>
+                    <div class="form-group">
+                        <label>Form field names (advanced)</label>
+                        <div style="display:flex;gap:8px">
+                            <input type="text" id="authUserField" placeholder="username field (default: username)">
+                            <input type="text" id="authPassField" placeholder="password field (default: password)">
+                        </div>
+                        <span class="field-hint" style="font-size:.8em;color:var(--muted)">The POST body field names your login form uses.</span>
+                    </div>
+                </div>
+
                 <button type="submit" id="scanBtn" class="btn btn-primary">🔍 Start Scan</button>
             </form>
         </div>
@@ -572,6 +621,49 @@ function renderUrlQueue() {
     ).join('');
 }
 
+function onAuthTypeChange() {
+    const t = document.getElementById('authType').value;
+    document.getElementById('authBearerGroup').style.display   = t === 'bearer'   ? 'block' : 'none';
+    document.getElementById('authUserpassGroup').style.display = t === 'userpass' ? 'block' : 'none';
+}
+
+function collectAuth() {
+    const t = document.getElementById('authType').value;
+    if (t === 'bearer') {
+        return {
+            type: 'bearer',
+            token: document.getElementById('authToken').value.trim(),
+            header: document.getElementById('authHeader').value.trim()
+        };
+    }
+    if (t === 'userpass') {
+        return {
+            type: 'userpass',
+            login_url: document.getElementById('authLoginUrl').value.trim(),
+            username: document.getElementById('authUsername').value,
+            password: document.getElementById('authPassword').value,
+            username_field: document.getElementById('authUserField').value.trim(),
+            password_field: document.getElementById('authPassField').value.trim()
+        };
+    }
+    return { type: 'none' };
+}
+
+function validateAuth(auth) {
+    if (auth.type === 'bearer' && !auth.token) {
+        alert('Enter a bearer token, or set Authentication to None.'); return false;
+    }
+    if (auth.type === 'userpass') {
+        if (!auth.login_url || !(auth.login_url.startsWith('http://') || auth.login_url.startsWith('https://'))) {
+            alert('Enter a valid Login URL (http:// or https://).'); return false;
+        }
+        if (!auth.username || !auth.password) {
+            alert('Enter both a username and password for login authentication.'); return false;
+        }
+    }
+    return true;
+}
+
 function collectUrls() {
     const urls = [...queuedUrls];
     const single = document.getElementById('targetUrl').value.trim();
@@ -595,8 +687,11 @@ document.getElementById('scanForm').addEventListener('submit', async function(e)
     const exportReptor = document.getElementById('exportReptor').checked;
     const projectName = document.getElementById('projectName').value.trim();
 
+    const auth = collectAuth();
+    if (!validateAuth(auth)) return;
+
     for (const url of urls) {
-        const payload = { url, use_ai: useAi, export_to_sysreptor: exportReptor, project_name: projectName };
+        const payload = { url, use_ai: useAi, export_to_sysreptor: exportReptor, project_name: projectName, auth };
         try {
             const kickoff = await fetch('/api/scan', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
             if (!kickoff.ok) {
