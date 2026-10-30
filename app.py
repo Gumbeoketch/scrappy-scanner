@@ -10,16 +10,19 @@ import sys
 import shutil
 import time
 import re
+import hmac
 import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file, Response
 import google.generativeai as genai
 
 app = Flask(__name__, static_folder='images', static_url_path='/static/images')
 app.config['UPLOAD_FOLDER'] = Path('scans')
 app.config['UPLOAD_FOLDER'].mkdir(exist_ok=True)
+# Cap request body size to mitigate memory-exhaustion DoS (10 MB).
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
 
 HISTORY_FILE = Path('scan_history.json')
 TRACKER_FILE = Path('vuln_tracker.json')
@@ -65,6 +68,64 @@ def load_env():
                     os.environ[key] = value
 
 load_env()
+
+
+# ---------------------------------------------------------------------------
+# Security: optional HTTP Basic Auth + hardening response headers
+# ---------------------------------------------------------------------------
+
+_AUTH_USER = os.getenv('APP_AUTH_USER')
+_AUTH_PASS = os.getenv('APP_AUTH_PASS')
+# Auth is opt-in: enforced only when both credentials are configured. Basic Auth
+# is used because browsers send it transparently, so the existing fetch-based UI
+# keeps working without changes once credentials are set.
+AUTH_ENABLED = bool(_AUTH_USER and _AUTH_PASS)
+
+
+def _auth_ok(auth):
+    if not auth or auth.type != 'basic':
+        return False
+    # Constant-time comparison to avoid username/password timing oracles.
+    user_ok = hmac.compare_digest(auth.username or '', _AUTH_USER)
+    pass_ok = hmac.compare_digest(auth.password or '', _AUTH_PASS)
+    return user_ok and pass_ok
+
+
+@app.before_request
+def _require_auth():
+    if not AUTH_ENABLED:
+        return None
+    if _auth_ok(request.authorization):
+        return None
+    return Response(
+        'Authentication required', 401,
+        {'WWW-Authenticate': 'Basic realm="Security Scanner"'}
+    )
+
+
+@app.after_request
+def _security_headers(resp):
+    resp.headers['X-Content-Type-Options'] = 'nosniff'
+    resp.headers['X-Frame-Options'] = 'DENY'
+    resp.headers['Referrer-Policy'] = 'no-referrer'
+    # The UI relies on inline <style>/<script>, so 'unsafe-inline' is required;
+    # everything else is locked to same-origin. frame-ancestors blocks clickjacking.
+    resp.headers.setdefault(
+        'Content-Security-Policy',
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "frame-ancestors 'none'"
+    )
+    # Never let a shared/proxy cache store API responses (defense in depth
+    # against cache-based information disclosure).
+    if request.path.startswith('/api/'):
+        resp.headers['Cache-Control'] = 'no-store'
+    return resp
 
 
 # ---------------------------------------------------------------------------
@@ -198,8 +259,9 @@ def run_zap_scan(target_url, output_dir):
     scan_json = output_dir / f"{scan_prefix}.json"
     scan_html = output_dir / f"{scan_prefix}.html"
 
-    # Ensure world-writable so the ZAP container can write output files
-    output_dir.chmod(0o777)
+    # Group/other-readable so the host can read files written by the (root) ZAP
+    # container, without making the directory world-writable.
+    output_dir.chmod(0o755)
 
     cmd = [
         'docker', 'run', '--rm',
@@ -510,7 +572,7 @@ def _run_scan_job(job_id, target_url, use_ai, export_reptor, project_name):
 
 @app.route('/api/scan', methods=['POST'])
 def scan_endpoint():
-    data          = request.get_json()
+    data          = request.get_json(silent=True) or {}
     target_url    = (data.get('url') or '').strip()
     use_ai        = data.get('use_ai', True)
     export_reptor = data.get('export_to_sysreptor', False)
@@ -591,9 +653,17 @@ def delete_dashboard_entry(url_key):
 
 @app.route('/api/download/<path:filename>')
 def download_file(filename):
-    file_path = app.config['UPLOAD_FOLDER'] / filename
-    if file_path.exists():
-        return send_file(file_path, as_attachment=True)
+    base = app.config['UPLOAD_FOLDER'].resolve()
+    try:
+        target = (base / filename).resolve()
+    except (OSError, ValueError):
+        return jsonify({'error': 'Invalid filename'}), 400
+    # Prevent path traversal / absolute-path escape: the resolved path must stay
+    # within the scans directory. Rejects inputs like '../../etc/passwd' or '/etc/passwd'.
+    if base != target and base not in target.parents:
+        return jsonify({'error': 'Invalid filename'}), 400
+    if target.is_file():
+        return send_file(target, as_attachment=True)
     return jsonify({'error': 'File not found'}), 404
 
 
@@ -671,7 +741,7 @@ def tracker_add():
 @app.route('/api/tracker/<vuln_id>', methods=['PATCH'])
 def tracker_update(vuln_id):
     """Update a tracked vulnerability (status, team, notes, etc.)."""
-    updates = request.get_json()
+    updates = request.get_json(silent=True) or {}
     data = load_tracker()
 
     for v in data['vulnerabilities']:
@@ -701,7 +771,7 @@ def tracker_delete(vuln_id):
 @app.route('/api/tracker/import', methods=['POST'])
 def tracker_import_from_scan():
     """Import findings from a completed scan into the tracker."""
-    body = request.get_json()
+    body = request.get_json(silent=True) or {}
     findings = body.get('findings', [])
     url = body.get('url', '')
     team = body.get('team', '')
@@ -752,6 +822,10 @@ if __name__ == '__main__':
     print(f"    - SysReptor: {'✓ Configured' if all([os.getenv('REPTOR_SERVER'), os.getenv('REPTOR_API_KEY')]) else '✗ Not configured'}")
     print(f"    - reptor CLI: {'✓ ' + REPTOR_BIN if REPTOR_BIN else '✗ Not found (run: pip install reptor)'}")
     print(f"    - Debug mode: {'⚠ ON' if debug else 'off'}")
+    print(f"    - Auth: {'✓ Basic Auth enabled' if AUTH_ENABLED else '✗ Disabled'}")
+    if host == '0.0.0.0' and not AUTH_ENABLED:
+        print("\n  ⚠ WARNING: listening on all interfaces with no authentication.")
+        print("    Set APP_AUTH_USER and APP_AUTH_PASS, or restrict network access.")
     print(f"\n  Press Ctrl+C to stop\n")
     print("="*60 + "\n")
 
