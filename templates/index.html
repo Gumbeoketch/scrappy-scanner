@@ -366,6 +366,7 @@
     <div class="tabs">
         <button class="tab-btn active" onclick="switchTab('scanner', this)">🔍 Scanner</button>
         <button class="tab-btn"        onclick="switchTab('jwt', this)">🔑 JWT</button>
+        <button class="tab-btn"        onclick="switchTab('discover', this)">🗺️ Discover</button>
         <button class="tab-btn"        onclick="switchTab('dashboard', this)">📊 Dashboard</button>
         <button class="tab-btn"        onclick="switchTab('tracker', this)">📋 Tracker</button>
     </div>
@@ -599,6 +600,73 @@
             </div>
         </div>
     </div><!-- /tab-jwt -->
+
+    <!-- ================================================================ -->
+    <!-- DISCOVER TAB                                                      -->
+    <!-- ================================================================ -->
+    <div id="tab-discover" class="tab-panel">
+        <div class="card">
+            <div class="card-title">🗺️ Endpoint / API Discovery</div>
+            <form id="discoverForm">
+                <div class="form-group">
+                    <label for="discTarget">Target URL</label>
+                    <input type="url" id="discTarget" placeholder="https://api.example.com">
+                </div>
+                <div class="form-group">
+                    <label for="discOpenapi">OpenAPI/Swagger URL (optional — auto-probed if blank)</label>
+                    <input type="url" id="discOpenapi" placeholder="https://api.example.com/openapi.json">
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="discCrawl" checked>
+                    <label for="discCrawl">Crawl HTML &amp; JavaScript for endpoints</label>
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="discProbe" checked>
+                    <label for="discProbe">Probe common API / admin / exposure paths</label>
+                </div>
+
+                <div class="form-group">
+                    <label for="discAuthType">Authentication (optional)</label>
+                    <select id="discAuthType" onchange="onDiscAuthChange()"
+                        style="width:100%;padding:11px 14px;border:2px solid var(--border);border-radius:8px;font-size:15px;background:white">
+                        <option value="none">None</option>
+                        <option value="bearer">Bearer token</option>
+                        <option value="cookie">Cookie</option>
+                    </select>
+                </div>
+                <div class="form-group" id="discBearerGroup" style="display:none">
+                    <label for="discToken">Bearer token</label>
+                    <input type="password" id="discToken" autocomplete="off" placeholder="token (Bearer prefix added automatically)">
+                </div>
+                <div class="form-group" id="discCookieGroup" style="display:none">
+                    <label for="discCookie">Cookie header</label>
+                    <input type="text" id="discCookie" autocomplete="off" placeholder="session=...; other=...">
+                </div>
+
+                <button type="submit" id="discBtn" class="btn btn-primary">🔎 Discover endpoints</button>
+            </form>
+            <div id="discStatus" class="status-bar"></div>
+        </div>
+
+        <div id="discResults" style="display:none">
+            <div class="card">
+                <div class="card-title">📊 Discovery Results</div>
+                <div id="discSummary" class="summary-grid"></div>
+                <div id="discDownloadBar" class="download-bar" style="display:none">
+                    <p>Endpoint inventory</p>
+                    <div id="discDownloadButtons"></div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-title">🔎 Findings</div>
+                <div id="discFindingsList"></div>
+            </div>
+            <div class="card">
+                <div class="card-title">🧭 Discovered Endpoints (<span id="discInvCount">0</span>)</div>
+                <div id="discInventory" style="max-height:420px;overflow:auto"></div>
+            </div>
+        </div>
+    </div><!-- /tab-discover -->
 
 </div><!-- /container -->
 
@@ -1223,6 +1291,140 @@ function renderJwtFindings(list) {
             </div>
         </div>`;
     }).join('');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Endpoint discovery
+// ─────────────────────────────────────────────────────────────────────────────
+function onDiscAuthChange() {
+    const t = document.getElementById('discAuthType').value;
+    document.getElementById('discBearerGroup').style.display = t === 'bearer' ? 'block' : 'none';
+    document.getElementById('discCookieGroup').style.display = t === 'cookie' ? 'block' : 'none';
+}
+
+document.getElementById('discoverForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const url = document.getElementById('discTarget').value.trim();
+    if (!url || !(url.startsWith('http://') || url.startsWith('https://'))) {
+        alert('Enter a valid target URL (http:// or https://).'); return;
+    }
+    const authType = document.getElementById('discAuthType').value;
+    const payload = {
+        url,
+        openapi_url: document.getElementById('discOpenapi').value.trim(),
+        crawl: document.getElementById('discCrawl').checked,
+        probe: document.getElementById('discProbe').checked,
+        auth_type: authType,
+        token: authType === 'bearer' ? document.getElementById('discToken').value.trim() : '',
+        cookie: authType === 'cookie' ? document.getElementById('discCookie').value.trim() : ''
+    };
+
+    const btn = document.getElementById('discBtn');
+    const status = document.getElementById('discStatus');
+    btn.disabled = true;
+    status.className = 'status-bar active';
+    status.innerHTML = '<div class="spinner"></div> Starting discovery…';
+
+    try {
+        const res = await fetch('/api/discover', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            status.className = 'status-bar active error';
+            status.textContent = data.error || 'Failed to start';
+            btn.disabled = false;
+            return;
+        }
+        pollDiscover(data.job_id, btn, status);
+    } catch (err) {
+        status.className = 'status-bar active error';
+        status.textContent = 'Network error: ' + err.message;
+        btn.disabled = false;
+    }
+});
+
+function pollDiscover(jobId, btn, status) {
+    const poll = async () => {
+        try {
+            const job = await fetch(`/api/scan/status/${jobId}`).then(r => r.json());
+            if (job.status === 'running') {
+                status.innerHTML = `<div class="spinner"></div> ${x(job.message || 'Working…')}`;
+                setTimeout(poll, 2500);
+                return;
+            }
+            btn.disabled = false;
+            if (job.status === 'error') {
+                status.className = 'status-bar active error';
+                status.textContent = job.message || 'Discovery failed';
+                return;
+            }
+            status.className = 'status-bar active success';
+            status.textContent = `Done — ${job.result.findings_count} finding(s), ${job.result.inventory_count} endpoint(s).`;
+            showDiscoverResults(job.result);
+        } catch (e) {
+            setTimeout(poll, 4000);
+        }
+    };
+    poll();
+}
+
+function showDiscoverResults(result) {
+    const findings = result.findings || [];
+    const c = {high:0, medium:0, low:0, info:0};
+    findings.forEach(f => { c[f.data.severity||'info'] = (c[f.data.severity||'info']||0)+1; });
+
+    document.getElementById('discSummary').innerHTML = `
+        <div class="stat-card stat-dark"> <div class="val">${result.inventory_count}</div><div class="lbl">Endpoints</div></div>
+        <div class="stat-card stat-red">  <div class="val">${c.high}</div>  <div class="lbl">High</div></div>
+        <div class="stat-card stat-amber"><div class="val">${c.medium}</div><div class="lbl">Medium</div></div>
+        <div class="stat-card stat-blue"> <div class="val">${c.low}</div>   <div class="lbl">Low</div></div>
+        <div class="stat-card stat-teal"> <div class="val">${c.info}</div>  <div class="lbl">Info</div></div>
+    `;
+
+    if (result.scan_files && result.scan_files.inventory) {
+        const rel = result.scan_files.inventory.split('scans/').pop();
+        const href = rel.split('/').map(encodeURIComponent).join('/');
+        document.getElementById('discDownloadButtons').innerHTML =
+            `<a href="/api/download/${href}" target="_blank">📄 endpoints.json</a>`;
+        document.getElementById('discDownloadBar').style.display = 'block';
+    }
+
+    const fl = document.getElementById('discFindingsList');
+    fl.innerHTML = findings.map((f, i) => {
+        const d = f.data, sev = d.severity || 'info';
+        const aff = d.affected_components || [], refs = d.references || [];
+        return `
+        <div class="finding-item">
+            <div class="finding-header">
+                <span class="sev-badge sev-${sev}">${sev}</span>
+                <div class="finding-title">${x(d.title||'Untitled')}</div>
+                <button class="toggle-btn" onclick="toggleBody('dfb${i}',this)">▼ Expand</button>
+            </div>
+            <div id="dfb${i}" class="finding-body">
+                ${d.description ? `<div class="finding-section"><h4>Description</h4><p>${x(d.description)}</p></div>` : ''}
+                ${d.recommendation ? `<div class="finding-section"><h4>Recommendation</h4><p>${x(d.recommendation)}</p></div>` : ''}
+                ${aff.length ? `<div class="finding-section"><h4>Evidence</h4><ul class="affected-list">${aff.map(a=>`<li>${x(a)}</li>`).join('')}</ul></div>` : ''}
+                ${refs.length ? `<div class="finding-section"><h4>References</h4><ul class="affected-list">${refs.map(r=>`<li>${x(r)}</li>`).join('')}</ul></div>` : ''}
+            </div>
+        </div>`;
+    }).join('') || '<p style="color:var(--muted);padding:20px">No findings.</p>';
+
+    const inv = result.inventory || [];
+    document.getElementById('discInvCount').textContent = result.inventory_count || inv.length;
+    document.getElementById('discInventory').innerHTML = `
+        <table class="url-table">
+            <thead><tr><th>Method</th><th>URL</th><th>Source</th><th>Status</th></tr></thead>
+            <tbody>${inv.map(e => `
+                <tr>
+                    <td><span class="scan-count">${x(e.method||'GET')}</span></td>
+                    <td class="url-cell">${x(e.url||'')}</td>
+                    <td class="date-cell">${x(e.source||'')}</td>
+                    <td class="date-cell">${e.status != null ? e.status : '—'}</td>
+                </tr>`).join('')}</tbody>
+        </table>`;
+
+    document.getElementById('discResults').style.display = 'block';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

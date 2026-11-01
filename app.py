@@ -20,6 +20,7 @@ from flask import Flask, render_template, request, jsonify, send_file, Response
 import google.generativeai as genai
 
 from scanners import jwt_scanner
+from scanners import endpoint_discovery
 
 app = Flask(__name__, static_folder='images', static_url_path='/static/images')
 app.config['UPLOAD_FOLDER'] = Path('scans')
@@ -778,6 +779,94 @@ def scan_status(job_id):
     if not job:
         return jsonify({'error': 'Job not found'}), 404
     return jsonify(job)
+
+
+def _run_discover_job(job_id, target_url, auth, openapi_url, do_crawl, do_probe):
+    def update(status, progress, message):
+        with _jobs_lock:
+            _jobs[job_id].update(status=status, progress=progress, message=message)
+
+    try:
+        output_dir = app.config['UPLOAD_FOLDER']
+        output_dir.chmod(0o755)
+
+        update('running', 15, 'Starting endpoint discovery…')
+        res = endpoint_discovery.run(
+            target_url, auth=auth, openapi_url=openapi_url,
+            do_crawl=do_crawl, do_probe=do_probe,
+            progress_cb=lambda msg: update('running', 50, msg),
+        )
+        findings = res['findings']
+        inventory = res['inventory']
+
+        # Persist the reusable endpoint inventory artifact.
+        resource = sanitize_url_to_filename(target_url)
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        inv_path = output_dir / f"{resource}_{ts}_endpoints.json"
+        with open(inv_path, 'w') as f:
+            json.dump({'target': target_url, 'count': len(inventory),
+                       'endpoints': inventory}, f, indent=2)
+
+        update('running', 90, 'Recording to dashboard…')
+        history_entry = record_scan(target_url, findings)
+        _auto_import_to_tracker(target_url, findings)
+
+        result = {
+            'success': True,
+            'target_url': target_url,
+            'scan_type': 'discovery',
+            'findings_count': len(findings),
+            'findings': findings,
+            'inventory_count': len(inventory),
+            'inventory': inventory[:500],
+            'scan_files': {'inventory': str(inv_path)},
+            'history_entry': history_entry,
+        }
+        with _jobs_lock:
+            _jobs[job_id].update(status='done', progress=100,
+                                 message='Discovery complete', result=result)
+    except Exception as e:
+        with _jobs_lock:
+            _jobs[job_id].update(status='error', message=str(e))
+
+
+@app.route('/api/discover', methods=['POST'])
+def discover_endpoint():
+    data = request.get_json(silent=True) or {}
+    target_url = (data.get('url') or '').strip()
+    openapi_url = (data.get('openapi_url') or '').strip() or None
+    do_crawl = bool(data.get('crawl', True))
+    do_probe = bool(data.get('probe', True))
+
+    if not target_url:
+        return jsonify({'error': 'URL is required'}), 400
+    if not target_url.startswith(('http://', 'https://')):
+        return jsonify({'error': 'URL must start with http:// or https://'}), 400
+    if openapi_url and not openapi_url.startswith(('http://', 'https://')):
+        return jsonify({'error': 'OpenAPI URL must start with http:// or https://'}), 400
+
+    # Lightweight auth passthrough for authenticated discovery.
+    auth = {
+        'type':   (data.get('auth_type') or 'none').lower(),
+        'token':  data.get('token') or '',
+        'header': data.get('header') or '',
+        'cookie': data.get('cookie') or '',
+    }
+    if auth['type'] == 'bearer' and not auth['token'].strip():
+        return jsonify({'error': 'A bearer token is required for bearer authentication'}), 400
+
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {'status': 'running', 'progress': 0,
+                         'message': 'Queued…', 'result': None, 'error': None}
+
+    threading.Thread(
+        target=_run_discover_job,
+        args=(job_id, target_url, auth, openapi_url, do_crawl, do_probe),
+        daemon=True,
+    ).start()
+
+    return jsonify({'job_id': job_id})
 
 
 @app.route('/api/jwt-scan', methods=['POST'])
