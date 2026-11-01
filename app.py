@@ -19,6 +19,8 @@ import yaml
 from flask import Flask, render_template, request, jsonify, send_file, Response
 import google.generativeai as genai
 
+from scanners import jwt_scanner
+
 app = Flask(__name__, static_folder='images', static_url_path='/static/images')
 app.config['UPLOAD_FOLDER'] = Path('scans')
 app.config['UPLOAD_FOLDER'].mkdir(exist_ok=True)
@@ -776,6 +778,44 @@ def scan_status(job_id):
     if not job:
         return jsonify({'error': 'Job not found'}), 404
     return jsonify(job)
+
+
+@app.route('/api/jwt-scan', methods=['POST'])
+def jwt_scan_endpoint():
+    """Analyse a JWT with local-only checks (no third-party calls)."""
+    data = request.get_json(silent=True) or {}
+    token = (data.get('token') or '').strip()
+    wordlist = data.get('wordlist')
+    public_key = data.get('public_key')
+    import_tracker = bool(data.get('import_to_tracker', False))
+
+    if not token:
+        return jsonify({'error': 'A JWT is required'}), 400
+
+    findings = jwt_scanner.run(token, hmac_wordlist=wordlist, public_key=public_key)
+
+    # Best-effort, non-sensitive label for grouping (issuer or key id).
+    label = 'JWT token'
+    try:
+        header, payload, *_ = jwt_scanner.decode_jwt(token)
+        label = str(payload.get('iss') or header.get('kid') or 'JWT token')[:80]
+    except Exception:
+        pass
+
+    if import_tracker:
+        _auto_import_to_tracker(f"jwt:{label}", findings)
+
+    counts = {'high': 0, 'medium': 0, 'low': 0, 'info': 0}
+    for f in findings:
+        sev = f.get('data', {}).get('severity', 'info')
+        counts[sev] = counts.get(sev, 0) + 1
+
+    return jsonify({
+        'findings': findings,
+        'findings_count': len(findings),
+        'counts': counts,
+        'target': label,
+    })
 
 
 @app.route('/api/config', methods=['GET'])

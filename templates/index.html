@@ -365,6 +365,7 @@
     <!-- ── Tabs ── -->
     <div class="tabs">
         <button class="tab-btn active" onclick="switchTab('scanner', this)">🔍 Scanner</button>
+        <button class="tab-btn"        onclick="switchTab('jwt', this)">🔑 JWT</button>
         <button class="tab-btn"        onclick="switchTab('dashboard', this)">📊 Dashboard</button>
         <button class="tab-btn"        onclick="switchTab('tracker', this)">📋 Tracker</button>
     </div>
@@ -548,6 +549,56 @@
         <div id="trackerList"></div>
 
     </div><!-- /tab-tracker -->
+
+    <!-- ================================================================ -->
+    <!-- JWT TAB                                                           -->
+    <!-- ================================================================ -->
+    <div id="tab-jwt" class="tab-panel">
+        <div class="card">
+            <div class="card-title">🔑 JWT Analyzer</div>
+            <div class="config-bar" style="border-left-color:var(--blue)">
+                <div class="config-item">🔒 Analysis runs locally on this server — your token is <strong>not</strong> sent to any third-party service.</div>
+            </div>
+            <form id="jwtForm">
+                <div class="form-group">
+                    <label for="jwtToken">JWT</label>
+                    <textarea id="jwtToken" rows="4" placeholder="Paste a JWT: eyJhbGciOi...header.payload.signature"
+                        style="width:100%;padding:11px 14px;border:2px solid var(--border);border-radius:8px;font-family:monospace;font-size:.85em;resize:vertical;word-break:break-all"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="jwtWordlist">HMAC secret wordlist (optional, one per line)</label>
+                    <textarea id="jwtWordlist" rows="3" placeholder="Extra candidate secrets to try against HS256/384/512 tokens&#10;(a built-in common-secret list is always used)"
+                        style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:8px;font-family:monospace;font-size:.82em;resize:vertical"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="jwtPubKey">Public key (optional — for RS/ES algorithm-confusion evidence)</label>
+                    <textarea id="jwtPubKey" rows="3" placeholder="-----BEGIN PUBLIC KEY-----&#10;...&#10;-----END PUBLIC KEY-----"
+                        style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:8px;font-family:monospace;font-size:.82em;resize:vertical"></textarea>
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="jwtImportTracker">
+                    <label for="jwtImportTracker">Import findings into the Tracker</label>
+                </div>
+                <button type="submit" id="jwtBtn" class="btn btn-primary">🔎 Analyze token</button>
+            </form>
+            <div id="jwtStatus" class="status-bar"></div>
+        </div>
+
+        <div id="jwtResults" style="display:none">
+            <div class="card">
+                <div class="card-title">🔎 JWT Findings</div>
+                <div id="jwtSummary" class="summary-grid"></div>
+                <div class="filter-bar">
+                    <button class="filter-btn filter-all active" onclick="filterJwt('all',this)">All</button>
+                    <button class="filter-btn filter-high"   onclick="filterJwt('high',this)">High</button>
+                    <button class="filter-btn filter-medium" onclick="filterJwt('medium',this)">Medium</button>
+                    <button class="filter-btn filter-low"    onclick="filterJwt('low',this)">Low</button>
+                    <button class="filter-btn filter-info"   onclick="filterJwt('info',this)">Info</button>
+                </div>
+                <div id="jwtFindingsList"></div>
+            </div>
+        </div>
+    </div><!-- /tab-jwt -->
 
 </div><!-- /container -->
 
@@ -1082,6 +1133,96 @@ async function deleteVuln(id) {
     if (!confirm('Delete this vulnerability from the tracker?')) return;
     await fetch(`/api/tracker/${id}`, { method:'DELETE' });
     loadTracker();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// JWT analyzer
+// ─────────────────────────────────────────────────────────────────────────────
+let jwtFindings = [];
+
+document.getElementById('jwtForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const token = document.getElementById('jwtToken').value.trim();
+    if (!token) { alert('Paste a JWT to analyze.'); return; }
+
+    const payload = {
+        token,
+        wordlist: document.getElementById('jwtWordlist').value,
+        public_key: document.getElementById('jwtPubKey').value.trim(),
+        import_to_tracker: document.getElementById('jwtImportTracker').checked
+    };
+
+    const btn = document.getElementById('jwtBtn');
+    const status = document.getElementById('jwtStatus');
+    btn.disabled = true;
+    status.className = 'status-bar active';
+    status.innerHTML = '<div class="spinner"></div> Analyzing token locally…';
+
+    try {
+        const res = await fetch('/api/jwt-scan', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            status.className = 'status-bar active error';
+            status.textContent = data.error || 'Analysis failed';
+            return;
+        }
+        status.className = 'status-bar active success';
+        status.textContent = `Analyzed — ${data.findings_count} finding(s) for ${data.target}.`;
+        showJwtResults(data);
+    } catch (err) {
+        status.className = 'status-bar active error';
+        status.textContent = 'Network error: ' + err.message;
+    } finally {
+        btn.disabled = false;
+    }
+});
+
+function showJwtResults(data) {
+    jwtFindings = data.findings || [];
+    const c = data.counts || {high:0, medium:0, low:0, info:0};
+    document.getElementById('jwtSummary').innerHTML = `
+        <div class="stat-card stat-green"><div class="val">${data.findings_count}</div><div class="lbl">Total</div></div>
+        <div class="stat-card stat-red">  <div class="val">${c.high||0}</div>  <div class="lbl">High</div></div>
+        <div class="stat-card stat-amber"><div class="val">${c.medium||0}</div><div class="lbl">Medium</div></div>
+        <div class="stat-card stat-blue"> <div class="val">${c.low||0}</div>   <div class="lbl">Low</div></div>
+        <div class="stat-card stat-teal"> <div class="val">${c.info||0}</div>  <div class="lbl">Info</div></div>
+    `;
+    renderJwtFindings(jwtFindings);
+    document.getElementById('jwtResults').style.display = 'block';
+}
+
+function filterJwt(sev, btn) {
+    document.querySelectorAll('#tab-jwt .filter-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    renderJwtFindings(sev === 'all' ? jwtFindings : jwtFindings.filter(f => f.data.severity === sev));
+}
+
+function renderJwtFindings(list) {
+    const el = document.getElementById('jwtFindingsList');
+    if (!list.length) {
+        el.innerHTML = '<p style="text-align:center;padding:30px;color:var(--muted)">No findings in this category.</p>';
+        return;
+    }
+    el.innerHTML = list.map((f, i) => {
+        const d = f.data, sev = d.severity || 'info';
+        const aff = d.affected_components || [], refs = d.references || [];
+        return `
+        <div class="finding-item">
+            <div class="finding-header">
+                <span class="sev-badge sev-${sev}">${sev}</span>
+                <div class="finding-title">${x(d.title||'Untitled')}</div>
+                <button class="toggle-btn" onclick="toggleBody('jwtfb${i}',this)">▼ Expand</button>
+            </div>
+            <div id="jwtfb${i}" class="finding-body">
+                ${d.description ? `<div class="finding-section"><h4>Description</h4><p>${x(d.description)}</p></div>` : ''}
+                ${d.recommendation ? `<div class="finding-section"><h4>Recommendation</h4><p>${x(d.recommendation)}</p></div>` : ''}
+                ${aff.length ? `<div class="finding-section"><h4>Evidence</h4><ul class="affected-list">${aff.map(a=>`<li>${x(a)}</li>`).join('')}</ul></div>` : ''}
+                ${refs.length ? `<div class="finding-section"><h4>References</h4><ul class="affected-list">${refs.map(r=>`<li>${x(r)}</li>`).join('')}</ul></div>` : ''}
+            </div>
+        </div>`;
+    }).join('');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
