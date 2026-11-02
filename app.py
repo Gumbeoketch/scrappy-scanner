@@ -270,12 +270,17 @@ def _scrub_secrets(text, secrets):
     return text
 
 
-def _build_zap_plan(target_url, json_name, html_name, auth_type, auth):
+def _build_zap_plan(target_url, json_name, html_name, auth_type, auth,
+                    active=False, ajax=False, spider_minutes=2, active_minutes=20):
     """
-    Build a ZAP Automation Framework plan (spider + passive scan + reports).
-    For 'userpass' it embeds a form-based authentication context + user so the
-    spider crawls behind the login. Bearer auth is handled separately via the
-    replacer (request header injection), so it needs no context changes here.
+    Build a ZAP Automation Framework plan.
+
+    Passive (default): passiveScan-config -> spider -> passiveScan-wait -> report.
+    Active adds an `activeScan` job (sends attack payloads -> finds injection,
+    XSS, and more of the OWASP Top 10). `ajax` adds a JS-rendering spider for
+    SPA/JavaScript-heavy apps. For 'userpass' it embeds a form-auth context + user
+    so crawl/active-scan run behind the login; bearer auth is injected via the
+    replacer (request header) and needs no context changes here.
     """
     context = {
         'name': 'scan-context',
@@ -284,7 +289,7 @@ def _build_zap_plan(target_url, json_name, html_name, auth_type, auth):
         'excludePaths': [],
         'technology': {},
     }
-    spider_params = {'context': 'scan-context', 'maxDuration': 2, 'maxDepth': 10}
+    spider_params = {'context': 'scan-context', 'maxDuration': spider_minutes, 'maxDepth': 10}
 
     if auth_type == 'userpass':
         login_url  = auth.get('login_url') or target_url
@@ -317,30 +322,54 @@ def _build_zap_plan(target_url, json_name, html_name, auth_type, auth):
         }]
         spider_params['user'] = 'scan-user'
 
+    user = 'scan-user' if auth_type == 'userpass' else None
+
+    jobs = [
+        {'type': 'passiveScan-config', 'parameters': {'maxAlertsPerRule': 10}},
+        {'type': 'spider', 'parameters': spider_params},
+    ]
+
+    if ajax:
+        ajax_params = {'context': 'scan-context', 'maxDuration': spider_minutes,
+                       'maxCrawlDepth': 10, 'browserId': 'firefox-headless'}
+        if user:
+            ajax_params['user'] = user
+        jobs.append({'type': 'spiderAjax', 'parameters': ajax_params})
+
+    jobs.append({'type': 'passiveScan-wait', 'parameters': {'maxDuration': 5}})
+
+    if active:
+        active_params = {'context': 'scan-context', 'maxScanDurationInMins': active_minutes}
+        if user:
+            active_params['user'] = user
+        jobs.append({'type': 'activeScan', 'parameters': active_params})
+
+    jobs += [
+        {'type': 'report', 'parameters': {
+            'template': 'traditional-json', 'reportDir': '/zap/wrk/',
+            'reportFile': json_name, 'reportTitle': 'ZAP Security Report',
+            'reportDescription': ''}},
+        {'type': 'report', 'parameters': {
+            'template': 'traditional-html', 'reportDir': '/zap/wrk/',
+            'reportFile': html_name, 'reportTitle': 'ZAP Security Report',
+            'reportDescription': ''}},
+    ]
+
     return {
         'env': {
             'contexts': [context],
             'parameters': {'failOnError': False, 'progressToStdout': True},
         },
-        'jobs': [
-            {'type': 'passiveScan-config', 'parameters': {'maxAlertsPerRule': 10}},
-            {'type': 'spider', 'parameters': spider_params},
-            {'type': 'passiveScan-wait', 'parameters': {'maxDuration': 5}},
-            {'type': 'report', 'parameters': {
-                'template': 'traditional-json', 'reportDir': '/zap/wrk/',
-                'reportFile': json_name, 'reportTitle': 'ZAP Security Report',
-                'reportDescription': ''}},
-            {'type': 'report', 'parameters': {
-                'template': 'traditional-html', 'reportDir': '/zap/wrk/',
-                'reportFile': html_name, 'reportTitle': 'ZAP Security Report',
-                'reportDescription': ''}},
-        ],
+        'jobs': jobs,
     }
 
 
-def _run_zap_auth_scan(target_url, output_dir, scan_prefix, scan_json, scan_html, auth_type, auth):
-    """Authenticated scan via the ZAP Automation Framework (bearer or form auth)."""
-    plan = _build_zap_plan(target_url, scan_json.name, scan_html.name, auth_type, auth)
+def _run_zap_af_scan(target_url, output_dir, scan_prefix, scan_json, scan_html, auth_type, auth,
+                     active=False, ajax=False, spider_minutes=2, active_minutes=20):
+    """ZAP Automation Framework scan — used for authenticated and/or active scans."""
+    plan = _build_zap_plan(target_url, scan_json.name, scan_html.name, auth_type, auth,
+                           active=active, ajax=ajax,
+                           spider_minutes=spider_minutes, active_minutes=active_minutes)
     plan_path = output_dir / f"{scan_prefix}_plan.yaml"
     secrets = [auth.get('token'), auth.get('password')]
 
@@ -374,12 +403,15 @@ def _run_zap_auth_scan(target_url, output_dir, scan_prefix, scan_json, scan_html
                 '-config', f'replacer.full_list(0).replacement={value}',
             ]
 
+        # Active scans + AJAX spidering can run long; size the timeout to the plan.
+        budget = spider_minutes + (spider_minutes if ajax else 0) + (active_minutes if active else 0) + 15
+        run_timeout = max(1800, budget * 60)
         # nosemgrep
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=run_timeout)
 
         if not scan_json.exists():
             detail = _scrub_secrets(result.stderr or result.stdout, secrets)
-            raise Exception(f"ZAP authenticated scan failed: {(detail or '')[:800]}")
+            raise Exception(f"ZAP scan failed: {(detail or '')[:800]}")
 
         return {
             'json_path': scan_json,
@@ -394,7 +426,8 @@ def _run_zap_auth_scan(target_url, output_dir, scan_prefix, scan_json, scan_html
             pass
 
 
-def run_zap_scan(target_url, output_dir, auth=None):
+def run_zap_scan(target_url, output_dir, auth=None, active=False, ajax=False,
+                 spider_minutes=2, active_minutes=20):
     resource_name = sanitize_url_to_filename(target_url)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     scan_prefix = f"{resource_name}_{timestamp}"
@@ -409,11 +442,15 @@ def run_zap_scan(target_url, output_dir, auth=None):
     auth = auth or {}
     auth_type = (auth.get('type') or 'none').lower()
 
-    if auth_type in ('bearer', 'userpass'):
-        return _run_zap_auth_scan(target_url, output_dir, scan_prefix,
-                                  scan_json, scan_html, auth_type, auth)
+    # Use the Automation Framework for authenticated and/or active scans. The fast
+    # passive baseline stays the default for unauthenticated passive runs.
+    if active or auth_type in ('bearer', 'userpass'):
+        return _run_zap_af_scan(target_url, output_dir, scan_prefix,
+                                scan_json, scan_html, auth_type, auth,
+                                active=active, ajax=ajax,
+                                spider_minutes=spider_minutes, active_minutes=active_minutes)
 
-    # --- Unauthenticated baseline scan (default) ---
+    # --- Unauthenticated passive baseline scan (default) ---
     cmd = [
         'docker', 'run', '--rm',
         '-v', f"{output_dir.absolute()}:/zap/wrk:rw",
@@ -663,7 +700,8 @@ def index():
     return render_template('index.html')
 
 
-def _run_scan_job(job_id, target_url, use_ai, export_reptor, project_name, auth=None):
+def _run_scan_job(job_id, target_url, use_ai, export_reptor, project_name, auth=None,
+                  active=False, ajax=False, spider_minutes=2, active_minutes=20):
     def update(status, progress, message):
         with _jobs_lock:
             _jobs[job_id].update(status=status, progress=progress, message=message)
@@ -672,11 +710,16 @@ def _run_scan_job(job_id, target_url, use_ai, export_reptor, project_name, auth=
         output_dir = app.config['UPLOAD_FOLDER']
 
         auth_type = (auth or {}).get('type', 'none')
-        start_msg = ('Starting authenticated ZAP scan…'
-                     if auth_type in ('bearer', 'userpass')
-                     else 'Starting ZAP Docker container…')
+        if active:
+            start_msg = 'Starting active ZAP scan (full — this can take a while)…'
+        elif auth_type in ('bearer', 'userpass'):
+            start_msg = 'Starting authenticated ZAP scan…'
+        else:
+            start_msg = 'Starting ZAP Docker container…'
         update('running', 10, start_msg)
-        scan_result = run_zap_scan(target_url, output_dir, auth=auth)
+        scan_result = run_zap_scan(target_url, output_dir, auth=auth,
+                                   active=active, ajax=ajax,
+                                   spider_minutes=spider_minutes, active_minutes=active_minutes)
 
         update('running', 60, 'Parsing ZAP findings…')
         findings_data = parse_zap_to_sysreptor(
@@ -735,6 +778,18 @@ def scan_endpoint():
                               f"Security Scan - {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     auth          = data.get('auth') or {}
     auth_type     = (auth.get('type') or 'none').lower()
+    active        = bool(data.get('active', False))
+    ajax          = bool(data.get('ajax', False))
+    try:
+        active_minutes = int(data.get('active_minutes') or 20)
+    except (TypeError, ValueError):
+        active_minutes = 20
+    try:
+        spider_minutes = int(data.get('spider_minutes') or 2)
+    except (TypeError, ValueError):
+        spider_minutes = 2
+    active_minutes = max(1, min(active_minutes, 120))
+    spider_minutes = max(1, min(spider_minutes, 15))
 
     if not target_url:
         return jsonify({'error': 'URL is required'}), 400
@@ -765,7 +820,8 @@ def scan_endpoint():
 
     threading.Thread(
         target=_run_scan_job,
-        args=(job_id, target_url, use_ai, export_reptor, project_name, auth),
+        args=(job_id, target_url, use_ai, export_reptor, project_name, auth,
+              active, ajax, spider_minutes, active_minutes),
         daemon=True
     ).start()
 

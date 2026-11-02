@@ -459,6 +459,22 @@
                     </label>
                     <div id="urlQueueList" style="max-height:120px;overflow-y:auto;background:var(--bg);border-radius:6px;padding:8px"></div>
                 </div>
+                <div class="form-group">
+                    <label>Scan depth</label>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="activeScan" onchange="onActiveScanChange()">
+                        <label for="activeScan">⚡ Active scan (full) — sends attack payloads to find injection, XSS &amp; more of the OWASP Top 10. Slower &amp; intrusive; authorized targets only.</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="ajaxSpider">
+                        <label for="ajaxSpider">🕷️ AJAX spider — crawl JavaScript-heavy / single-page apps</label>
+                    </div>
+                    <div id="activeOpts" style="display:none;margin-top:4px">
+                        <label for="activeMinutes" style="font-size:.85rem">Max active-scan time (minutes)</label>
+                        <input type="text" id="activeMinutes" value="20" inputmode="numeric" style="max-width:130px">
+                        <span class="field-hint">Tip: run with authentication below for the richest results behind a login.</span>
+                    </div>
+                </div>
                 <div class="checkbox-group">
                     <input type="checkbox" id="useAI" checked>
                     <label for="useAI">Enable AI enrichment (requires Gemini API key)</label>
@@ -796,6 +812,11 @@ function renderUrlQueue() {
     ).join('');
 }
 
+function onActiveScanChange() {
+    document.getElementById('activeOpts').style.display =
+        document.getElementById('activeScan').checked ? 'block' : 'none';
+}
+
 function onAuthTypeChange() {
     const t = document.getElementById('authType').value;
     document.getElementById('authBearerGroup').style.display   = t === 'bearer'   ? 'block' : 'none';
@@ -865,8 +886,13 @@ document.getElementById('scanForm').addEventListener('submit', async function(e)
     const auth = collectAuth();
     if (!validateAuth(auth)) return;
 
+    const active = document.getElementById('activeScan').checked;
+    const ajax = document.getElementById('ajaxSpider').checked;
+    const activeMinutes = parseInt(document.getElementById('activeMinutes').value, 10) || 20;
+
     for (const url of urls) {
-        const payload = { url, use_ai: useAi, export_to_sysreptor: exportReptor, project_name: projectName, auth };
+        const payload = { url, use_ai: useAi, export_to_sysreptor: exportReptor, project_name: projectName,
+                          auth, active, ajax, active_minutes: activeMinutes };
         try {
             const kickoff = await fetch('/api/scan', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
             if (!kickoff.ok) {
