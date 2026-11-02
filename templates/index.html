@@ -423,6 +423,7 @@
         <button class="tab-btn active" onclick="switchTab('scanner', this)">🔍 Scanner</button>
         <button class="tab-btn"        onclick="switchTab('jwt', this)">🔑 JWT</button>
         <button class="tab-btn"        onclick="switchTab('discover', this)">🗺️ Discover</button>
+        <button class="tab-btn"        onclick="switchTab('authz', this)">🔓 AuthZ</button>
         <button class="tab-btn"        onclick="switchTab('dashboard', this)">📊 Dashboard</button>
         <button class="tab-btn"        onclick="switchTab('tracker', this)">📋 Tracker</button>
     </div>
@@ -739,6 +740,53 @@
             </div>
         </div>
     </div><!-- /tab-discover -->
+
+    <!-- ================================================================ -->
+    <!-- AUTHZ TAB                                                         -->
+    <!-- ================================================================ -->
+    <div id="tab-authz" class="tab-panel">
+        <div class="card">
+            <div class="card-title">🔓 Authorization Testing (BOLA / IDOR · privilege escalation)</div>
+            <div class="config-bar" style="border-left-color:var(--amber)">
+                <div class="config-item">⚠ Replays each request as every identity (GET only). Authorized targets only. Findings are candidates — verify manually.</div>
+            </div>
+            <form id="authzForm">
+                <div class="form-group">
+                    <label for="authzUrls">Target URLs <span style="font-weight:400;color:var(--muted)">(one per line — paste from the Discover tab's inventory)</span></label>
+                    <textarea id="authzUrls" rows="4" placeholder="https://app.example.com/api/account/101&#10;https://app.example.com/admin/users&#10;https://app.example.com/api/orders"
+                        style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:8px;font-family:monospace;font-size:.82em;resize:vertical"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Identities <span style="font-weight:400;color:var(--muted)">(add two or more; an anonymous identity is always included)</span></label>
+                    <div id="identityList"></div>
+                    <button type="button" class="btn btn-primary" style="font-size:.82em;padding:7px 14px;margin-top:4px" onclick="addIdentity()">+ Add identity</button>
+                </div>
+
+                <button type="submit" id="authzBtn" class="btn btn-primary">🔎 Run authorization matrix</button>
+            </form>
+            <div id="authzStatus" class="status-bar"></div>
+        </div>
+
+        <div id="authzResults" style="display:none">
+            <div class="card">
+                <div class="card-title">📊 Results</div>
+                <div id="authzSummary" class="summary-grid"></div>
+                <div id="authzDownloadBar" class="download-bar" style="display:none">
+                    <p>Access matrix</p>
+                    <div id="authzDownloadButtons"></div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-title">🔎 Findings</div>
+                <div id="authzFindingsList"></div>
+            </div>
+            <div class="card">
+                <div class="card-title">🧮 Access Matrix</div>
+                <div id="authzMatrix" style="max-height:440px;overflow:auto"></div>
+            </div>
+        </div>
+    </div><!-- /tab-authz -->
 
 </div><!-- /container -->
 
@@ -1508,6 +1556,174 @@ function showDiscoverResults(result) {
 
     document.getElementById('discResults').style.display = 'block';
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Authorization testing (BOLA / IDOR / privilege escalation)
+// ─────────────────────────────────────────────────────────────────────────────
+let identitySeq = 0;
+
+function addIdentity(preset) {
+    preset = preset || {};
+    const id = ++identitySeq;
+    const wrap = document.createElement('div');
+    wrap.className = 'finding-item';
+    wrap.style.marginBottom = '10px';
+    wrap.id = 'ident-' + id;
+    wrap.innerHTML = `
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="text" placeholder="name (e.g. userA)" value="${x(preset.name||'')}" data-f="name" style="flex:1;min-width:120px">
+            <select data-f="role" style="width:140px">
+                <option value="user">user</option>
+                <option value="admin">admin</option>
+                <option value="anonymous">anonymous</option>
+                <option value="other">other</option>
+            </select>
+            <select data-f="authkind" style="width:130px" onchange="onIdentAuthKind(${id})">
+                <option value="bearer">Bearer token</option>
+                <option value="cookie">Cookie</option>
+                <option value="none">No creds</option>
+            </select>
+            <button type="button" class="btn btn-danger" onclick="document.getElementById('ident-${id}').remove()">✕</button>
+        </div>
+        <input type="password" placeholder="token / cookie value" data-f="secret" autocomplete="off" style="width:100%;margin-top:8px" id="identSecret-${id}">
+        <textarea rows="2" placeholder="owned object URLs (optional, one per line) — enables precise BOLA cross-checks" data-f="owned"
+            style="width:100%;margin-top:8px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-family:var(--mono);font-size:.78rem;resize:vertical"></textarea>
+    `;
+    document.getElementById('identityList').appendChild(wrap);
+    const roleSel = wrap.querySelector('[data-f="role"]');
+    if (preset.role) roleSel.value = preset.role;
+}
+
+function onIdentAuthKind(id) {
+    const wrap = document.getElementById('ident-' + id);
+    const kind = wrap.querySelector('[data-f="authkind"]').value;
+    const secret = document.getElementById('identSecret-' + id);
+    secret.style.display = kind === 'none' ? 'none' : 'block';
+    secret.placeholder = kind === 'cookie' ? 'Cookie header (session=...; ...)' : 'Bearer token';
+}
+
+function collectIdentities() {
+    const out = [];
+    document.querySelectorAll('#identityList .finding-item').forEach(w => {
+        const name = w.querySelector('[data-f="name"]').value.trim();
+        if (!name) return;
+        const role = w.querySelector('[data-f="role"]').value;
+        const kind = w.querySelector('[data-f="authkind"]').value;
+        const secret = w.querySelector('[data-f="secret"]').value.trim();
+        const owned = w.querySelector('[data-f="owned"]').value;
+        const ident = { name, role, owned };
+        if (kind === 'bearer' && secret) ident.token = secret;
+        if (kind === 'cookie' && secret) ident.cookie = secret;
+        out.push(ident);
+    });
+    return out;
+}
+
+document.getElementById('authzForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const urls = document.getElementById('authzUrls').value.split('\n').map(s => s.trim()).filter(Boolean);
+    if (!urls.length) { alert('Enter at least one target URL.'); return; }
+    const identities = collectIdentities();
+    if (!identities.length) { alert('Add at least one identity (besides anonymous).'); return; }
+
+    const btn = document.getElementById('authzBtn');
+    const status = document.getElementById('authzStatus');
+    btn.disabled = true;
+    status.className = 'status-bar active';
+    status.innerHTML = '<div class="spinner"></div> Running authorization matrix…';
+
+    try {
+        const res = await fetch('/api/authz', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ urls, identities })
+        });
+        const data = await res.json();
+        if (!res.ok) { status.className = 'status-bar active error'; status.textContent = data.error || 'Failed to start'; btn.disabled = false; return; }
+        pollAuthz(data.job_id, btn, status);
+    } catch (err) {
+        status.className = 'status-bar active error'; status.textContent = 'Network error: ' + err.message; btn.disabled = false;
+    }
+});
+
+function pollAuthz(jobId, btn, status) {
+    const poll = async () => {
+        try {
+            const job = await fetch(`/api/scan/status/${jobId}`).then(r => r.json());
+            if (job.status === 'running') {
+                status.innerHTML = `<div class="spinner"></div> ${x(job.message || 'Working…')}`;
+                setTimeout(poll, 2500); return;
+            }
+            btn.disabled = false;
+            if (job.status === 'error') { status.className = 'status-bar active error'; status.textContent = job.message || 'Failed'; return; }
+            status.className = 'status-bar active success';
+            status.textContent = `Done — ${job.result.findings_count} finding(s).`;
+            showAuthzResults(job.result);
+        } catch (e) { setTimeout(poll, 4000); }
+    };
+    poll();
+}
+
+function showAuthzResults(result) {
+    const findings = result.findings || [];
+    const c = {high:0, medium:0, low:0, info:0};
+    findings.forEach(f => { c[f.data.severity||'info'] = (c[f.data.severity||'info']||0)+1; });
+    document.getElementById('authzSummary').innerHTML = `
+        <div class="stat-card stat-red">  <div class="val">${c.high}</div>  <div class="lbl">High</div></div>
+        <div class="stat-card stat-amber"><div class="val">${c.medium}</div><div class="lbl">Medium</div></div>
+        <div class="stat-card stat-blue"> <div class="val">${c.low}</div>   <div class="lbl">Low</div></div>
+        <div class="stat-card stat-teal"> <div class="val">${c.info}</div>  <div class="lbl">Info</div></div>
+    `;
+
+    if (result.scan_files && result.scan_files.matrix) {
+        const rel = result.scan_files.matrix.split('scans/').pop();
+        const href = rel.split('/').map(encodeURIComponent).join('/');
+        document.getElementById('authzDownloadButtons').innerHTML = `<a href="/api/download/${href}" target="_blank">📄 authz-matrix.json</a>`;
+        document.getElementById('authzDownloadBar').style.display = 'block';
+    }
+
+    document.getElementById('authzFindingsList').innerHTML = findings.map((f, i) => {
+        const d = f.data, sev = d.severity || 'info';
+        const aff = d.affected_components || [], refs = d.references || [];
+        return `
+        <div class="finding-item">
+            <div class="finding-header">
+                <span class="sev-badge sev-${sev}">${sev}</span>
+                <div class="finding-title">${x(d.title||'Untitled')}</div>
+                <button class="toggle-btn" onclick="toggleBody('azfb${i}',this)">▼ Expand</button>
+            </div>
+            <div id="azfb${i}" class="finding-body">
+                ${d.description ? `<div class="finding-section"><h4>Description</h4><p>${x(d.description)}</p></div>` : ''}
+                ${d.recommendation ? `<div class="finding-section"><h4>Recommendation</h4><p>${x(d.recommendation)}</p></div>` : ''}
+                ${aff.length ? `<div class="finding-section"><h4>Evidence</h4><ul class="affected-list">${aff.map(a=>`<li>${x(a)}</li>`).join('')}</ul></div>` : ''}
+                ${refs.length ? `<div class="finding-section"><h4>References</h4><ul class="affected-list">${refs.map(r=>`<li>${x(r)}</li>`).join('')}</ul></div>` : ''}
+            </div>
+        </div>`;
+    }).join('') || '<p style="color:var(--muted);padding:20px">No findings.</p>';
+
+    const matrix = result.matrix || [];
+    const idents = matrix.length ? Object.keys(matrix[0].cells) : [];
+    document.getElementById('authzMatrix').innerHTML = `
+        <table class="url-table">
+            <thead><tr><th>Method</th><th>URL</th>${idents.map(n => `<th>${x(n)}</th>`).join('')}</tr></thead>
+            <tbody>${matrix.map(row => `
+                <tr>
+                    <td><span class="scan-count">${x(row.method)}</span></td>
+                    <td class="url-cell">${x(row.url)}</td>
+                    ${idents.map(n => {
+                        const code = row.cells[n];
+                        const ok = typeof code === 'number' && code >= 200 && code < 300;
+                        const color = ok ? 'var(--green)' : (code === 401 || code === 403 ? 'var(--muted)' : 'var(--amber)');
+                        return `<td style="font-weight:700;color:${color}">${x(String(code))}</td>`;
+                    }).join('')}
+                </tr>`).join('')}</tbody>
+        </table>`;
+
+    document.getElementById('authzResults').style.display = 'block';
+}
+
+// seed two identity rows
+addIdentity({ name: 'userA', role: 'user' });
+addIdentity({ name: 'userB', role: 'user' });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Init

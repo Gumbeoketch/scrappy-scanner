@@ -15,12 +15,14 @@ import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 import yaml
 from flask import Flask, render_template, request, jsonify, send_file, Response
 import google.generativeai as genai
 
 from scanners import jwt_scanner
 from scanners import endpoint_discovery
+from scanners import authz as authz_scanner
 
 app = Flask(__name__, static_folder='images', static_url_path='/static/images')
 app.config['UPLOAD_FOLDER'] = Path('scans')
@@ -922,6 +924,113 @@ def discover_endpoint():
         daemon=True,
     ).start()
 
+    return jsonify({'job_id': job_id})
+
+
+def _run_authz_job(job_id, targets, identities, allow_unsafe, max_requests):
+    def update(status, progress, message):
+        with _jobs_lock:
+            _jobs[job_id].update(status=status, progress=progress, message=message)
+
+    try:
+        output_dir = app.config['UPLOAD_FOLDER']
+        output_dir.chmod(0o755)
+
+        update('running', 15, 'Starting authorization matrix…')
+        res = authz_scanner.run(
+            targets, identities, allow_unsafe=allow_unsafe, max_requests=max_requests,
+            progress_cb=lambda msg: update('running', 55, msg),
+        )
+        findings = res['findings']
+        matrix = res['matrix']
+
+        # Persist the matrix artifact (no credentials are included in it).
+        host = ''
+        if targets:
+            try:
+                host = urlparse(targets[0]['url']).netloc
+            except ValueError:
+                host = 'authz'
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        mx_path = output_dir / f"{sanitize_url_to_filename(host or 'authz')}_{ts}_authz.json"
+        with open(mx_path, 'w') as f:
+            json.dump({'matrix': matrix, 'findings': findings}, f, indent=2)
+
+        update('running', 90, 'Recording to tracker…')
+        _auto_import_to_tracker(f"authz:{host or 'targets'}", findings)
+
+        result = {
+            'success': True,
+            'scan_type': 'authz',
+            'findings_count': len(findings),
+            'findings': findings,
+            'matrix': matrix[:500],
+            'scan_files': {'matrix': str(mx_path)},
+        }
+        with _jobs_lock:
+            _jobs[job_id].update(status='done', progress=100,
+                                 message='Authorization test complete', result=result)
+    except Exception as e:
+        with _jobs_lock:
+            _jobs[job_id].update(status='error', message=str(e))
+
+
+@app.route('/api/authz', methods=['POST'])
+def authz_endpoint():
+    data = request.get_json(silent=True) or {}
+
+    # Targets: accept an explicit {method,url} list, or a newline/array of URLs (GET).
+    targets = []
+    for t in (data.get('targets') or []):
+        url = (t.get('url') or '').strip()
+        if url.startswith(('http://', 'https://')):
+            targets.append({'method': (t.get('method') or 'GET').upper(), 'url': url})
+    raw_urls = data.get('urls') or []
+    if isinstance(raw_urls, str):
+        raw_urls = raw_urls.splitlines()
+    for u in raw_urls:
+        u = (u or '').strip()
+        if u.startswith(('http://', 'https://')):
+            targets.append({'method': 'GET', 'url': u})
+
+    if not targets:
+        return jsonify({'error': 'At least one target URL (http:// or https://) is required'}), 400
+
+    # Identities: normalise owned URLs; the module adds an anonymous identity itself.
+    identities = []
+    for i in (data.get('identities') or []):
+        name = (i.get('name') or '').strip()
+        if not name:
+            continue
+        owned = i.get('owned') or []
+        if isinstance(owned, str):
+            owned = re.split(r'[\s,]+', owned)
+        owned = [o.strip() for o in owned if o and o.strip().startswith(('http://', 'https://'))]
+        identities.append({
+            'name': name,
+            'role': (i.get('role') or '').strip(),
+            'token': (i.get('token') or '').strip(),
+            'header': (i.get('header') or '').strip(),
+            'cookie': (i.get('cookie') or '').strip(),
+            'owned': owned,
+        })
+
+    allow_unsafe = bool(data.get('allow_unsafe', False))
+    try:
+        max_requests = int(data.get('max_requests') or 150)
+    except (TypeError, ValueError):
+        max_requests = 150
+    max_requests = max(1, min(max_requests, 500))
+
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {'status': 'running', 'progress': 0,
+                         'message': 'Queued…', 'result': None, 'error': None}
+    threading.Thread(
+        target=_run_authz_job,
+        args=(job_id, targets, identities, allow_unsafe, max_requests),
+        daemon=True,
+    ).start()
     return jsonify({'job_id': job_id})
 
 
