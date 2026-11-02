@@ -3,144 +3,174 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Letshego Group Security Scanner</title>
+    <title>Scrappy Security Scanner</title>
     <style>
         *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
         :root {
-            --green:       #1a7f5a;
-            --green-dark:  #156347;
-            --green-light: #27ae60;
-            --orange:      #e67e22;
-            --red:         #c0392b;
-            --amber:       #e67e22;
-            --blue:        #2980b9;
-            --text:        #1c2b22;
-            --muted:       #6b7c75;
-            --border:      #dde8e2;
-            --bg:          #f4f8f6;
+            /* Accent palette — names preserved so inline var() usages re-theme automatically */
+            --green:       #34d399;   /* primary accent (emerald) */
+            --green-dark:  #10b981;
+            --green-light: #22d3ee;   /* secondary accent (cyan) */
+            --orange:      #fb923c;
+            --red:         #f87171;
+            --amber:       #fbbf24;
+            --blue:        #60a5fa;
+            /* Neutrals */
+            --text:        #e6edf6;
+            --muted:       #94a3b8;
+            --border:      #28344b;
+            --bg:          #1b2638;   /* elevated surface: inputs, chips, hovers */
+            /* Extended design tokens */
+            --page:        #0b1120;
+            --surface:     #121c2e;
+            --surface-2:   rgba(148,163,184,.04);
+            --ring:        rgba(52,211,153,.30);
+            --radius:      14px;
+            --shadow:      0 12px 34px -12px rgba(0,0,0,.6);
+            --mono:        ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+            --sans:        "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, var(--green) 0%, var(--orange) 100%);
+            font-family: var(--sans);
+            color: var(--text);
+            background:
+                radial-gradient(1100px 560px at 12% -10%, rgba(52,211,153,.10), transparent 60%),
+                radial-gradient(1000px 520px at 100% 0%, rgba(34,211,238,.08), transparent 55%),
+                var(--page);
             min-height: 100vh;
-            padding: 20px;
+            padding: 24px;
             position: relative;
+            -webkit-font-smoothing: antialiased;
+            text-rendering: optimizeLegibility;
         }
         body::before {
             content: '';
             position: fixed; inset: 0;
-            background-image: repeating-linear-gradient(
-                45deg, transparent, transparent 35px,
-                rgba(255,255,255,.04) 35px, rgba(255,255,255,.04) 70px
-            );
+            background-image:
+                linear-gradient(rgba(148,163,184,.035) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(148,163,184,.035) 1px, transparent 1px);
+            background-size: 46px 46px;
             pointer-events: none; z-index: 0;
         }
 
-        .container { max-width: 1280px; margin: 0 auto; position: relative; z-index: 1; }
+        .container { max-width: 1320px; margin: 0 auto; position: relative; z-index: 1; }
 
         /* ── Header ── */
         .header {
-            display: flex; align-items: center; justify-content: space-between;
-            color: white; margin-bottom: 28px; gap: 20px;
+            display: flex; align-items: flex-end; justify-content: space-between;
+            margin-bottom: 26px; gap: 20px;
+            padding-bottom: 18px; border-bottom: 1px solid var(--border);
         }
-        .header h1 { font-size: 2.2em; text-shadow: 1px 2px 6px rgba(0,0,0,.25); }
-        .header p  { font-size: 1em; opacity: .9; margin-top: 6px; }
-        .header-logo {
-            background: white; padding: 10px 18px; border-radius: 10px;
-            box-shadow: 0 4px 12px rgba(0,0,0,.12); height: 76px; flex-shrink: 0;
+        .header h1 {
+            font-size: 1.95rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.1;
+            background: linear-gradient(90deg, var(--green), var(--green-light));
+            -webkit-background-clip: text; background-clip: text; color: transparent;
         }
+        .header p  { font-size: .95rem; color: var(--muted); margin-top: 8px; }
+        .header-logo { display: none; }
         .header-logo img { height: 100%; width: auto; display: block; }
 
         /* ── Tabs ── */
         .tabs {
-            display: flex; gap: 4px;
-            background: rgba(255,255,255,.15); border-radius: 10px;
-            padding: 4px; margin-bottom: 20px; width: fit-content;
+            display: flex; gap: 4px; flex-wrap: wrap;
+            background: rgba(148,163,184,.07); border: 1px solid var(--border); border-radius: 12px;
+            padding: 5px; margin-bottom: 22px; width: fit-content;
         }
         .tab-btn {
-            padding: 10px 24px; border: none; border-radius: 8px;
-            font-size: 0.95em; font-weight: 600; cursor: pointer;
-            background: transparent; color: rgba(255,255,255,.8);
-            transition: all .2s;
+            padding: 9px 20px; border: none; border-radius: 9px;
+            font-size: 0.9rem; font-weight: 600; cursor: pointer;
+            background: transparent; color: var(--muted);
+            transition: all .18s;
         }
         .tab-btn.active {
-            background: white; color: var(--green);
-            box-shadow: 0 2px 8px rgba(0,0,0,.12);
+            background: linear-gradient(135deg, rgba(52,211,153,.18), rgba(34,211,238,.13));
+            color: var(--text);
+            box-shadow: inset 0 0 0 1px rgba(52,211,153,.35);
         }
-        .tab-btn:not(.active):hover { background: rgba(255,255,255,.2); color: white; }
+        .tab-btn:not(.active):hover { background: rgba(148,163,184,.10); color: var(--text); }
 
         .tab-panel { display: none; }
-        .tab-panel.active { display: block; }
+        .tab-panel.active { display: block; animation: fadeInUp .28s ease both; }
 
         /* ── Card ── */
         .card {
-            background: white; border-radius: 12px;
-            padding: 28px; box-shadow: 0 8px 32px rgba(0,0,0,.09);
+            background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+            padding: 26px; box-shadow: var(--shadow);
             margin-bottom: 20px;
         }
         .card-title {
-            font-size: 1.15em; font-weight: 700;
+            font-size: 1.08rem; font-weight: 700;
             color: var(--text); margin-bottom: 20px;
             display: flex; align-items: center; gap: 8px;
         }
 
         /* ── Config bar ── */
         .config-bar {
-            display: flex; flex-wrap: wrap; gap: 18px;
+            display: flex; flex-wrap: wrap; gap: 16px;
             padding: 12px 16px;
-            background: #f5fbf8; border-left: 4px solid var(--green);
-            border-radius: 8px; margin-bottom: 22px; font-size: .88em;
+            background: rgba(52,211,153,.06); border: 1px solid var(--border); border-left: 3px solid var(--green);
+            border-radius: 10px; margin-bottom: 22px; font-size: .86rem; color: var(--muted);
         }
         .config-item { display: flex; align-items: center; gap: 6px; }
-        .config-item.enabled  { color: var(--green-light); }
+        .config-item.enabled  { color: var(--green); }
         .config-item.disabled { color: var(--red); }
 
         /* ── Form ── */
         .form-group { margin-bottom: 18px; }
-        .form-group label { display: block; font-weight: 600; color: var(--text); margin-bottom: 6px; font-size: .92em; }
+        .form-group label { display: block; font-weight: 600; color: var(--text); margin-bottom: 7px; font-size: .9rem; }
         .form-group input[type="text"],
-        .form-group input[type="url"] {
+        .form-group input[type="url"],
+        .form-group input[type="password"] {
             width: 100%; padding: 11px 14px;
-            border: 2px solid var(--border); border-radius: 8px;
-            font-size: 15px; transition: border-color .2s;
+            border: 1px solid var(--border); border-radius: 10px;
+            font-size: .95rem; background: var(--bg); color: var(--text);
+            transition: border-color .18s, box-shadow .18s;
         }
-        .form-group input:focus { outline: none; border-color: var(--green); }
+        textarea, select {
+            background: var(--bg); color: var(--text);
+            border: 1px solid var(--border); border-radius: 10px;
+        }
+        .form-group input:focus, textarea:focus, select:focus {
+            outline: none; border-color: var(--green); box-shadow: 0 0 0 3px var(--ring);
+        }
+        ::placeholder { color: var(--muted); opacity: .6; }
+        .field-hint { color: var(--muted); font-size: .8rem; display: inline-block; margin-top: 4px; }
         .checkbox-group { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
         .checkbox-group input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; accent-color: var(--green); }
-        .checkbox-group label { cursor: pointer; font-size: .92em; color: var(--text); }
+        .checkbox-group label { cursor: pointer; font-size: .9rem; color: var(--muted); }
 
         /* ── Buttons ── */
         .btn {
-            padding: 11px 26px; font-size: .95em; font-weight: 600;
-            border: none; border-radius: 8px; cursor: pointer;
+            padding: 11px 24px; font-size: .92rem; font-weight: 650;
+            border: none; border-radius: 10px; cursor: pointer;
             display: inline-flex; align-items: center; gap: 7px;
-            transition: all .2s;
+            transition: transform .15s, box-shadow .2s, filter .2s;
         }
         .btn-primary {
             background: linear-gradient(135deg, var(--green) 0%, var(--green-light) 100%);
-            color: white;
+            color: #06281f;
         }
-        .btn-primary:hover  { transform: translateY(-2px); box-shadow: 0 5px 18px rgba(26,127,90,.35); }
-        .btn-primary:disabled { opacity: .6; cursor: not-allowed; transform: none; }
-        .btn-danger { background: #fee; color: var(--red); border: 1px solid #fcc; padding: 6px 12px; font-size: .82em; }
-        .btn-danger:hover { background: #fdd; }
+        .btn-primary:hover  { transform: translateY(-1px); box-shadow: 0 8px 22px -6px rgba(52,211,153,.5); filter: brightness(1.05); }
+        .btn-primary:disabled { opacity: .55; cursor: not-allowed; transform: none; box-shadow: none; filter: none; }
+        .btn-danger { background: rgba(248,113,113,.12); color: var(--red); border: 1px solid rgba(248,113,113,.3); padding: 6px 12px; font-size: .8rem; }
+        .btn-danger:hover { background: rgba(248,113,113,.2); }
 
         /* ── Status bar ── */
         .status-bar {
-            display: none; margin-top: 18px; padding: 14px;
-            background: #f0f8f5; border-left: 4px solid var(--green);
-            border-radius: 8px; font-size: .92em;
+            display: none; margin-top: 18px; padding: 13px 15px;
+            background: rgba(148,163,184,.08); border: 1px solid var(--border); border-left: 3px solid var(--green);
+            border-radius: 10px; font-size: .9rem; color: var(--text);
         }
         .status-bar.active  { display: flex; align-items: center; gap: 10px; }
-        .status-bar.error   { background: #fff0f0; border-left-color: var(--red); }
-        .status-bar.success { background: #f0fff4; border-left-color: var(--green-light); }
+        .status-bar.error   { background: rgba(248,113,113,.08); border-left-color: var(--red); }
+        .status-bar.success { background: rgba(52,211,153,.08); border-left-color: var(--green); }
 
         /* ── Spinner ── */
         .spinner {
             display: inline-block; width: 15px; height: 15px; flex-shrink: 0;
-            border: 3px solid rgba(26,127,90,.25); border-top-color: var(--green);
+            border: 3px solid rgba(52,211,153,.25); border-top-color: var(--green);
             border-radius: 50%; animation: spin .7s linear infinite;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -148,119 +178,229 @@
         /* ── Summary grid ── */
         .summary-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
             gap: 14px; margin-bottom: 24px;
         }
         .stat-card {
-            padding: 18px; border-radius: 10px;
+            padding: 18px; border-radius: 12px;
             color: white; text-align: center;
+            box-shadow: 0 8px 20px -10px rgba(0,0,0,.6);
+            position: relative; overflow: hidden;
         }
-        .stat-card .val   { font-size: 2.2em; font-weight: 700; line-height: 1; }
-        .stat-card .lbl   { font-size: .82em; opacity: .9; margin-top: 5px; }
-        .stat-green  { background: linear-gradient(135deg, var(--green), var(--green-light)); }
-        .stat-red    { background: linear-gradient(135deg, #c0392b, #e74c3c); }
-        .stat-amber  { background: linear-gradient(135deg, #d35400, var(--orange)); }
-        .stat-blue   { background: linear-gradient(135deg, #1a5276, var(--blue)); }
-        .stat-teal   { background: linear-gradient(135deg, #117a65, #1abc9c); }
-        .stat-dark   { background: linear-gradient(135deg, #2c3e50, #4a6074); }
+        .stat-card::after {
+            content: ''; position: absolute; inset: 0;
+            background: linear-gradient(180deg, rgba(255,255,255,.14), transparent 45%);
+            pointer-events: none;
+        }
+        .stat-card .val   { font-size: 2.1rem; font-weight: 800; line-height: 1; position: relative; }
+        .stat-card .lbl   { font-size: .78rem; opacity: .95; margin-top: 5px; position: relative; }
+        .stat-green  { background: linear-gradient(135deg, #10b981, #22d3ee); }
+        .stat-red    { background: linear-gradient(135deg, #ef4444, #f97316); }
+        .stat-amber  { background: linear-gradient(135deg, #f59e0b, #fbbf24); color: #3b2a00; }
+        .stat-blue   { background: linear-gradient(135deg, #3b82f6, #6366f1); }
+        .stat-teal   { background: linear-gradient(135deg, #0ea5e9, #22d3ee); }
+        .stat-dark   { background: linear-gradient(135deg, #334155, #475569); }
 
         /* ── Download bar ── */
         .download-bar {
-            padding: 14px; background: var(--bg);
-            border-radius: 8px; margin-top: 16px;
+            padding: 14px; background: rgba(148,163,184,.05); border: 1px solid var(--border);
+            border-radius: 10px; margin-top: 16px;
         }
-        .download-bar p { font-size: .88em; font-weight: 600; color: var(--muted); margin-bottom: 10px; }
+        .download-bar p { font-size: .85rem; font-weight: 600; color: var(--muted); margin-bottom: 10px; }
         .download-bar a {
             display: inline-block; margin-right: 10px; margin-bottom: 6px;
-            padding: 7px 14px; background: var(--green);
-            color: white; text-decoration: none;
-            border-radius: 6px; font-size: .85em; transition: all .2s;
+            padding: 7px 14px; background: rgba(52,211,153,.12);
+            color: var(--green); border: 1px solid rgba(52,211,153,.3); text-decoration: none;
+            border-radius: 8px; font-size: .84rem; transition: all .18s;
         }
-        .download-bar a:hover { background: var(--green-dark); transform: translateY(-1px); }
+        .download-bar a:hover { background: rgba(52,211,153,.2); transform: translateY(-1px); }
 
         /* ── Findings ── */
         .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
         .filter-btn {
-            padding: 6px 14px; border-radius: 20px; border: 2px solid transparent;
-            font-size: .82em; font-weight: 600; cursor: pointer;
-            transition: all .15s; background: var(--bg); color: var(--muted);
+            padding: 6px 14px; border-radius: 999px; border: 1px solid var(--border);
+            font-size: .8rem; font-weight: 600; cursor: pointer;
+            transition: all .15s; background: rgba(148,163,184,.08); color: var(--muted);
         }
-        .filter-btn:hover, .filter-btn.active { border-color: currentColor; }
+        .filter-btn:hover { color: var(--text); }
+        .filter-btn.active { border-color: currentColor; color: var(--text); background: rgba(148,163,184,.14); }
         .filter-all    { color: var(--green); }
         .filter-high   { color: var(--red); }
         .filter-medium { color: var(--amber); }
         .filter-low    { color: var(--blue); }
-        .filter-info   { color: #6c757d; }
+        .filter-info   { color: var(--muted); }
 
         .finding-item {
-            border: 1px solid var(--border); border-radius: 10px;
-            padding: 18px; margin-bottom: 12px; transition: box-shadow .2s;
+            border: 1px solid var(--border); border-radius: 12px;
+            padding: 16px 18px; margin-bottom: 12px; background: var(--surface-2);
+            transition: border-color .2s, box-shadow .2s, transform .15s;
         }
-        .finding-item:hover { box-shadow: 0 4px 14px rgba(0,0,0,.08); }
+        .finding-item:hover { border-color: rgba(52,211,153,.35); box-shadow: 0 8px 24px -14px rgba(0,0,0,.7); }
         .finding-header { display: flex; align-items: center; gap: 12px; }
-        .finding-title  { flex: 1; font-size: 1em; font-weight: 600; color: var(--text); }
+        .finding-title  { flex: 1; font-size: .98rem; font-weight: 600; color: var(--text); }
         .finding-body   { margin-top: 14px; line-height: 1.65; display: none; }
 
         .sev-badge {
-            padding: 4px 10px; border-radius: 5px;
-            font-size: .78em; font-weight: 700; text-transform: uppercase; flex-shrink: 0;
+            padding: 4px 10px; border-radius: 6px; border: 1px solid transparent;
+            font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; flex-shrink: 0;
         }
-        .sev-high   { background: #fee2e2; color: #b91c1c; }
-        .sev-medium { background: #fff3cd; color: #92400e; }
-        .sev-low    { background: #dbeafe; color: #1e40af; }
-        .sev-info   { background: #e0f2fe; color: #075985; }
+        .sev-high   { background: rgba(248,113,113,.15); color: #fecaca; border-color: rgba(248,113,113,.3); }
+        .sev-medium { background: rgba(251,191,36,.15); color: #fde68a; border-color: rgba(251,191,36,.3); }
+        .sev-low    { background: rgba(96,165,250,.15); color: #bfdbfe; border-color: rgba(96,165,250,.3); }
+        .sev-info   { background: rgba(56,189,248,.15); color: #bae6fd; border-color: rgba(56,189,248,.3); }
 
         .finding-section        { margin-bottom: 12px; }
-        .finding-section h4     { font-size: .85em; font-weight: 700; color: var(--green); margin-bottom: 5px; }
-        .finding-section p      { font-size: .9em; color: #4a5568; white-space: pre-wrap; }
+        .finding-section h4     { font-size: .82rem; font-weight: 700; color: var(--green); margin-bottom: 5px; text-transform: uppercase; letter-spacing: .04em; }
+        .finding-section p      { font-size: .9rem; color: var(--muted); white-space: pre-wrap; }
         .affected-list          { list-style: none; padding: 0; }
-        .affected-list li       { padding: 6px 10px; background: var(--bg); border-radius: 4px; margin-bottom: 4px; font-size: .82em; font-family: monospace; word-break: break-all; }
+        .affected-list li       { padding: 6px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 4px; font-size: .8rem; font-family: var(--mono); word-break: break-all; color: var(--text); }
 
-        .toggle-btn { padding: 5px 11px; background: var(--bg); border: none; border-radius: 5px; font-size: .8em; cursor: pointer; color: var(--muted); flex-shrink: 0; }
-        .toggle-btn:hover { background: var(--border); }
+        .toggle-btn { padding: 5px 11px; background: rgba(148,163,184,.1); border: 1px solid var(--border); border-radius: 7px; font-size: .78rem; cursor: pointer; color: var(--muted); flex-shrink: 0; transition: all .15s; }
+        .toggle-btn:hover { background: rgba(148,163,184,.18); color: var(--text); }
 
         /* ── Dashboard ── */
-        .dash-top { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 24px; }
+        .dash-top { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 24px; }
 
-        .url-table { width: 100%; border-collapse: collapse; font-size: .9em; }
+        .url-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
         .url-table thead th {
             text-align: left; padding: 10px 14px;
-            background: var(--bg); color: var(--muted);
-            font-weight: 600; font-size: .8em; text-transform: uppercase;
-            letter-spacing: .05em; border-bottom: 2px solid var(--border);
+            background: rgba(148,163,184,.06); color: var(--muted);
+            font-weight: 600; font-size: .74rem; text-transform: uppercase;
+            letter-spacing: .06em; border-bottom: 1px solid var(--border);
         }
         .url-table tbody tr { border-bottom: 1px solid var(--border); transition: background .15s; }
-        .url-table tbody tr:hover { background: var(--bg); }
+        .url-table tbody tr:hover { background: rgba(148,163,184,.06); }
         .url-table td { padding: 12px 14px; vertical-align: middle; }
-        .url-cell { font-family: monospace; font-size: .88em; word-break: break-all; color: var(--text); }
+        .url-cell { font-family: var(--mono); font-size: .84rem; word-break: break-all; color: var(--text); }
         .scan-count {
             display: inline-block; padding: 3px 10px;
-            background: #e8f5ee; color: var(--green);
-            border-radius: 12px; font-weight: 700; font-size: .85em;
+            background: rgba(52,211,153,.14); color: var(--green); border: 1px solid rgba(52,211,153,.3);
+            border-radius: 999px; font-weight: 700; font-size: .82rem;
         }
         .mini-sev { display: flex; gap: 5px; flex-wrap: wrap; }
         .mini-badge {
-            padding: 2px 8px; border-radius: 4px;
-            font-size: .75em; font-weight: 600;
+            padding: 2px 8px; border-radius: 6px;
+            font-size: .72rem; font-weight: 600;
         }
-        .mini-high   { background: #fee2e2; color: #b91c1c; }
-        .mini-medium { background: #fff3cd; color: #92400e; }
-        .mini-low    { background: #dbeafe; color: #1e40af; }
-        .mini-info   { background: #e0f2fe; color: #075985; }
-        .date-cell   { font-size: .82em; color: var(--muted); white-space: nowrap; }
+        .mini-high   { background: rgba(248,113,113,.15); color: #fecaca; }
+        .mini-medium { background: rgba(251,191,36,.15); color: #fde68a; }
+        .mini-low    { background: rgba(96,165,250,.15); color: #bfdbfe; }
+        .mini-info   { background: rgba(56,189,248,.15); color: #bae6fd; }
+        .date-cell   { font-size: .8rem; color: var(--muted); white-space: nowrap; }
 
         .empty-state {
             text-align: center; padding: 50px 20px; color: var(--muted);
         }
-        .empty-state .icon { font-size: 3em; margin-bottom: 12px; }
-        .empty-state p { font-size: .95em; }
+        .empty-state .icon { font-size: 3em; margin-bottom: 12px; opacity: .7; }
+        .empty-state p { font-size: .95rem; }
+
+        /* ── Jobs queue panel ── */
+        .url-input-wrapper {
+            display: flex; gap: 8px; align-items: center;
+        }
+        .url-input-wrapper input { flex: 1; }
+        .url-tag {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: rgba(52,211,153,.12); color: var(--green); border: 1px solid rgba(52,211,153,.25); padding: 4px 10px;
+            border-radius: 7px; font-size: .8rem; font-family: var(--mono);
+            margin: 3px 4px 3px 0;
+        }
+        .url-tag button {
+            border: none; background: none; color: var(--red); cursor: pointer;
+            font-size: 1.1em; line-height: 1; padding: 0 2px;
+        }
+        .job-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 14px; border-bottom: 1px solid var(--border);
+            transition: background .15s; cursor: pointer; border-radius: 8px;
+        }
+        .job-item:last-child { border-bottom: none; }
+        .job-item:hover { background: rgba(148,163,184,.06); }
+        .job-item .job-url { flex: 1; font-family: var(--mono); font-size: .83rem; word-break: break-all; color: var(--text); }
+        .job-item .job-status {
+            padding: 4px 10px; border-radius: 999px;
+            font-size: .74rem; font-weight: 700; text-transform: uppercase; flex-shrink: 0;
+        }
+        .job-running  { background: rgba(251,191,36,.15); color: #fde68a; }
+        .job-done     { background: rgba(52,211,153,.15); color: #a7f3d0; }
+        .job-error    { background: rgba(248,113,113,.15); color: #fecaca; }
+        .job-progress { font-size: .8rem; color: var(--muted); flex-shrink: 0; min-width: 50px; text-align: right; }
+        .job-msg { font-size: .78rem; color: var(--muted); margin-top: 3px; }
 
         /* ── Responsive ── */
         @media (max-width: 768px) {
-            .header { flex-direction: column; }
-            .header h1 { font-size: 1.7em; }
-            .header-logo { height: 58px; }
+            body { padding: 14px; }
+            .header { flex-direction: column; align-items: flex-start; }
+            .header h1 { font-size: 1.5rem; }
             .config-bar { flex-direction: column; gap: 8px; }
+            .tabs { width: 100%; }
+        }
+
+        /* ── Tracker ── */
+        .vuln-row {
+            border: 1px solid var(--border); border-radius: 10px;
+            padding: 16px; margin-bottom: 12px; transition: box-shadow .15s;
+        }
+        .vuln-row:hover { border-color: rgba(52,211,153,.3); box-shadow: 0 6px 18px -12px rgba(0,0,0,.7); }
+        .vuln-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .vuln-title { flex: 1; font-weight: 600; color: var(--text); font-size: .95rem; }
+        .vuln-meta { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; font-size: .82rem; color: var(--muted); }
+        .vuln-meta span { display: flex; align-items: center; gap: 4px; }
+        .vuln-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+        .status-select {
+            padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border);
+            background: var(--bg); color: var(--text);
+            font-size: .82rem; font-weight: 600; cursor: pointer;
+        }
+        .team-input {
+            padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border);
+            background: var(--bg); color: var(--text);
+            font-size: .82rem; width: 160px;
+        }
+        .status-open         { background: rgba(52,211,153,.15); color: #a7f3d0; }
+        .status-closed       { background: rgba(148,163,184,.15); color: #cbd5e1; }
+        .status-blocked      { background: rgba(248,113,113,.15); color: #fecaca; }
+        .status-risk_accepted { background: rgba(251,191,36,.15); color: #fde68a; }
+
+        /* ── URL group cards ── */
+        .url-group {
+            background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+            box-shadow: var(--shadow);
+            margin-bottom: 16px; overflow: hidden;
+        }
+        .url-group-header {
+            display: flex; align-items: center; gap: 14px;
+            padding: 16px 20px; cursor: pointer;
+            transition: background .15s; border-bottom: 1px solid transparent;
+        }
+        .url-group-header:hover { background: rgba(148,163,184,.05); }
+        .url-group-header.expanded { border-bottom-color: var(--border); }
+        .url-group-url {
+            flex: 1; font-family: var(--mono); font-size: .88rem;
+            font-weight: 600; color: var(--text); word-break: break-all;
+        }
+        .url-group-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+        .url-group-count {
+            padding: 4px 10px; border-radius: 999px;
+            font-size: .74rem; font-weight: 700;
+        }
+        .url-group-toggle {
+            font-size: .85em; color: var(--muted); flex-shrink: 0;
+            transition: transform .2s;
+        }
+        .url-group-toggle.open { transform: rotate(180deg); }
+        .url-group-body { display: none; padding: 0 20px 16px; }
+        .url-group-body.open { display: block; }
+
+        /* ── Motion & polish ── */
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+        :focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+        ::selection { background: rgba(52,211,153,.3); color: #fff; }
+        ::-webkit-scrollbar { width: 11px; height: 11px; }
+        ::-webkit-scrollbar-thumb { background: rgba(148,163,184,.25); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,.4); background-clip: content-box; }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation: none !important; transition: none !important; }
         }
     </style>
 </head>
@@ -269,19 +409,23 @@
 
     <!-- ── Header ── -->
     <div class="header">
-        <div>
-            <h1>🛡️ Letshego Group Security Scanner</h1>
-            <p>Automated vulnerability scanning powered by ZAP, AI enrichment &amp; SysReptor integration</p>
-        </div>
-        <div class="header-logo">
-            <img src="/static/images/LHL-Logo.png" alt="Letshego Group Logo">
+        <div style="display:flex;align-items:center;gap:15px">
+            <div style="font-size:2rem;line-height:1;filter:drop-shadow(0 3px 10px rgba(52,211,153,.45))">🛡️</div>
+            <div>
+                <h1>Scrappy Security Scanner</h1>
+                <p>Web · API · JWT · endpoint discovery — powered by ZAP, AI enrichment &amp; SysReptor</p>
+            </div>
         </div>
     </div>
 
     <!-- ── Tabs ── -->
     <div class="tabs">
         <button class="tab-btn active" onclick="switchTab('scanner', this)">🔍 Scanner</button>
+        <button class="tab-btn"        onclick="switchTab('jwt', this)">🔑 JWT</button>
+        <button class="tab-btn"        onclick="switchTab('discover', this)">🗺️ Discover</button>
+        <button class="tab-btn"        onclick="switchTab('authz', this)">🔓 AuthZ</button>
         <button class="tab-btn"        onclick="switchTab('dashboard', this)">📊 Dashboard</button>
+        <button class="tab-btn"        onclick="switchTab('tracker', this)">📋 Tracker</button>
     </div>
 
     <!-- ================================================================ -->
@@ -299,8 +443,38 @@
 
             <form id="scanForm">
                 <div class="form-group">
-                    <label for="targetUrl">Target URL</label>
-                    <input type="url" id="targetUrl" placeholder="https://example.com" required>
+                    <label for="targetUrl">Target URLs</label>
+                    <div class="url-input-wrapper">
+                        <input type="url" id="targetUrl" placeholder="https://example.com" >
+                        <button type="button" class="btn btn-primary" style="padding:10px 16px;flex-shrink:0" onclick="addUrlToList()">+ Add</button>
+                    </div>
+                    <span class="field-hint">Enter URLs one at a time, or paste multiple (one per line) into the box below</span>
+                </div>
+                <div class="form-group">
+                    <textarea id="bulkUrls" rows="3" placeholder="Paste multiple URLs here — one per line&#10;https://app1.example.com&#10;https://app2.example.com&#10;https://api.example.com"
+                        style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:8px;font-family:monospace;font-size:.85em;resize:vertical"></textarea>
+                </div>
+                <div id="urlQueuePreview" style="display:none;margin-bottom:16px">
+                    <label style="font-size:.85em;font-weight:600;color:var(--muted);margin-bottom:6px;display:block">
+                        Queued URLs (<span id="urlCount">0</span>):
+                    </label>
+                    <div id="urlQueueList" style="max-height:120px;overflow-y:auto;background:var(--bg);border-radius:6px;padding:8px"></div>
+                </div>
+                <div class="form-group">
+                    <label>Scan depth</label>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="activeScan" onchange="onActiveScanChange()">
+                        <label for="activeScan">⚡ Active scan (full) — sends attack payloads to find injection, XSS &amp; more of the OWASP Top 10. Slower &amp; intrusive; authorized targets only.</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="ajaxSpider">
+                        <label for="ajaxSpider">🕷️ AJAX spider — crawl JavaScript-heavy / single-page apps</label>
+                    </div>
+                    <div id="activeOpts" style="display:none;margin-top:4px">
+                        <label for="activeMinutes" style="font-size:.85rem">Max active-scan time (minutes)</label>
+                        <input type="text" id="activeMinutes" value="20" inputmode="numeric" style="max-width:130px">
+                        <span class="field-hint">Tip: run with authentication below for the richest results behind a login.</span>
+                    </div>
                 </div>
                 <div class="checkbox-group">
                     <input type="checkbox" id="useAI" checked>
@@ -314,13 +488,63 @@
                     <label for="projectName">SysReptor Project Name</label>
                     <input type="text" id="projectName" placeholder="Security Assessment – 2025-06-04">
                 </div>
+
+                <!-- ── Authenticated scanning ── -->
+                <div class="form-group">
+                    <label for="authType">🔐 Authentication <span style="font-weight:400;color:var(--muted)">(scan behind a login)</span></label>
+                    <select id="authType" onchange="onAuthTypeChange()"
+                        style="width:100%;padding:11px 14px;border:2px solid var(--border);border-radius:8px;font-size:15px;background:var(--bg)">
+                        <option value="none">None (unauthenticated)</option>
+                        <option value="bearer">Bearer token (API / OAuth)</option>
+                        <option value="userpass">Username &amp; password (form login)</option>
+                    </select>
+                    <span class="field-hint" style="font-size:.8em;color:var(--muted)">Applies to every URL queued in this scan.</span>
+                </div>
+
+                <div id="authBearerGroup" style="display:none">
+                    <div class="form-group">
+                        <label for="authToken">Bearer token</label>
+                        <input type="password" id="authToken" autocomplete="off"
+                            placeholder="paste token (the 'Bearer ' prefix is added automatically)">
+                        <span class="field-hint" style="font-size:.8em;color:var(--muted)">Sent as an <code>Authorization</code> header on every request.</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="authHeader">Header name (advanced)</label>
+                        <input type="text" id="authHeader" placeholder="Authorization">
+                    </div>
+                </div>
+
+                <div id="authUserpassGroup" style="display:none">
+                    <div class="form-group">
+                        <label for="authLoginUrl">Login URL</label>
+                        <input type="url" id="authLoginUrl" placeholder="https://example.com/login">
+                    </div>
+                    <div class="form-group">
+                        <label for="authUsername">Username</label>
+                        <input type="text" id="authUsername" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="authPassword">Password</label>
+                        <input type="password" id="authPassword" autocomplete="new-password">
+                    </div>
+                    <div class="form-group">
+                        <label>Form field names (advanced)</label>
+                        <div style="display:flex;gap:8px">
+                            <input type="text" id="authUserField" placeholder="username field (default: username)">
+                            <input type="text" id="authPassField" placeholder="password field (default: password)">
+                        </div>
+                        <span class="field-hint" style="font-size:.8em;color:var(--muted)">The POST body field names your login form uses.</span>
+                    </div>
+                </div>
+
                 <button type="submit" id="scanBtn" class="btn btn-primary">🔍 Start Scan</button>
             </form>
+        </div>
 
-            <div id="statusBar" class="status-bar">
-                <div class="spinner" id="statusSpinner"></div>
-                <span id="statusText">Initialising…</span>
-            </div>
+        <!-- Active / completed scans panel -->
+        <div id="jobsPanel" class="card" style="display:none">
+            <div class="card-title">⚡ Scan Queue</div>
+            <div id="jobsList"></div>
         </div>
 
         <!-- Results -->
@@ -372,6 +596,198 @@
 
     </div><!-- /tab-dashboard -->
 
+    <!-- ================================================================ -->
+    <!-- TRACKER TAB                                                        -->
+    <!-- ================================================================ -->
+    <div id="tab-tracker" class="tab-panel">
+
+        <!-- Stats row -->
+        <div class="card">
+            <div class="card-title">📋 Vulnerability Tracker</div>
+            <div id="trackerStats" class="dash-top"></div>
+        </div>
+
+        <!-- Filters -->
+        <div class="card">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+                <span style="font-size:.85em;font-weight:600;color:var(--muted)">Filter by status:</span>
+                <button class="filter-btn filter-all active" onclick="filterTracker('all',this)">All</button>
+                <button class="filter-btn" style="color:var(--green)" onclick="filterTracker('open',this)">Open</button>
+                <button class="filter-btn" style="color:var(--red)" onclick="filterTracker('blocked',this)">Blocked</button>
+                <button class="filter-btn" style="color:var(--amber)" onclick="filterTracker('risk_accepted',this)">Risk Accepted</button>
+                <button class="filter-btn" style="color:var(--muted)" onclick="filterTracker('closed',this)">Closed</button>
+            </div>
+        </div>
+
+        <!-- URL-grouped vulnerability list -->
+        <div id="trackerList"></div>
+
+    </div><!-- /tab-tracker -->
+
+    <!-- ================================================================ -->
+    <!-- JWT TAB                                                           -->
+    <!-- ================================================================ -->
+    <div id="tab-jwt" class="tab-panel">
+        <div class="card">
+            <div class="card-title">🔑 JWT Analyzer</div>
+            <div class="config-bar" style="border-left-color:var(--blue)">
+                <div class="config-item">🔒 Analysis runs locally on this server — your token is <strong>not</strong> sent to any third-party service.</div>
+            </div>
+            <form id="jwtForm">
+                <div class="form-group">
+                    <label for="jwtToken">JWT</label>
+                    <textarea id="jwtToken" rows="4" placeholder="Paste a JWT: eyJhbGciOi...header.payload.signature"
+                        style="width:100%;padding:11px 14px;border:2px solid var(--border);border-radius:8px;font-family:monospace;font-size:.85em;resize:vertical;word-break:break-all"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="jwtWordlist">HMAC secret wordlist (optional, one per line)</label>
+                    <textarea id="jwtWordlist" rows="3" placeholder="Extra candidate secrets to try against HS256/384/512 tokens&#10;(a built-in common-secret list is always used)"
+                        style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:8px;font-family:monospace;font-size:.82em;resize:vertical"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="jwtPubKey">Public key (optional — for RS/ES algorithm-confusion evidence)</label>
+                    <textarea id="jwtPubKey" rows="3" placeholder="-----BEGIN PUBLIC KEY-----&#10;...&#10;-----END PUBLIC KEY-----"
+                        style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:8px;font-family:monospace;font-size:.82em;resize:vertical"></textarea>
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="jwtImportTracker">
+                    <label for="jwtImportTracker">Import findings into the Tracker</label>
+                </div>
+                <button type="submit" id="jwtBtn" class="btn btn-primary">🔎 Analyze token</button>
+            </form>
+            <div id="jwtStatus" class="status-bar"></div>
+        </div>
+
+        <div id="jwtResults" style="display:none">
+            <div class="card">
+                <div class="card-title">🔎 JWT Findings</div>
+                <div id="jwtSummary" class="summary-grid"></div>
+                <div class="filter-bar">
+                    <button class="filter-btn filter-all active" onclick="filterJwt('all',this)">All</button>
+                    <button class="filter-btn filter-high"   onclick="filterJwt('high',this)">High</button>
+                    <button class="filter-btn filter-medium" onclick="filterJwt('medium',this)">Medium</button>
+                    <button class="filter-btn filter-low"    onclick="filterJwt('low',this)">Low</button>
+                    <button class="filter-btn filter-info"   onclick="filterJwt('info',this)">Info</button>
+                </div>
+                <div id="jwtFindingsList"></div>
+            </div>
+        </div>
+    </div><!-- /tab-jwt -->
+
+    <!-- ================================================================ -->
+    <!-- DISCOVER TAB                                                      -->
+    <!-- ================================================================ -->
+    <div id="tab-discover" class="tab-panel">
+        <div class="card">
+            <div class="card-title">🗺️ Endpoint / API Discovery</div>
+            <form id="discoverForm">
+                <div class="form-group">
+                    <label for="discTarget">Target URL</label>
+                    <input type="url" id="discTarget" placeholder="https://api.example.com">
+                </div>
+                <div class="form-group">
+                    <label for="discOpenapi">OpenAPI/Swagger URL (optional — auto-probed if blank)</label>
+                    <input type="url" id="discOpenapi" placeholder="https://api.example.com/openapi.json">
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="discCrawl" checked>
+                    <label for="discCrawl">Crawl HTML &amp; JavaScript for endpoints</label>
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="discProbe" checked>
+                    <label for="discProbe">Probe common API / admin / exposure paths</label>
+                </div>
+
+                <div class="form-group">
+                    <label for="discAuthType">Authentication (optional)</label>
+                    <select id="discAuthType" onchange="onDiscAuthChange()"
+                        style="width:100%;padding:11px 14px;border:2px solid var(--border);border-radius:8px;font-size:15px;background:var(--bg)">
+                        <option value="none">None</option>
+                        <option value="bearer">Bearer token</option>
+                        <option value="cookie">Cookie</option>
+                    </select>
+                </div>
+                <div class="form-group" id="discBearerGroup" style="display:none">
+                    <label for="discToken">Bearer token</label>
+                    <input type="password" id="discToken" autocomplete="off" placeholder="token (Bearer prefix added automatically)">
+                </div>
+                <div class="form-group" id="discCookieGroup" style="display:none">
+                    <label for="discCookie">Cookie header</label>
+                    <input type="text" id="discCookie" autocomplete="off" placeholder="session=...; other=...">
+                </div>
+
+                <button type="submit" id="discBtn" class="btn btn-primary">🔎 Discover endpoints</button>
+            </form>
+            <div id="discStatus" class="status-bar"></div>
+        </div>
+
+        <div id="discResults" style="display:none">
+            <div class="card">
+                <div class="card-title">📊 Discovery Results</div>
+                <div id="discSummary" class="summary-grid"></div>
+                <div id="discDownloadBar" class="download-bar" style="display:none">
+                    <p>Endpoint inventory</p>
+                    <div id="discDownloadButtons"></div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-title">🔎 Findings</div>
+                <div id="discFindingsList"></div>
+            </div>
+            <div class="card">
+                <div class="card-title">🧭 Discovered Endpoints (<span id="discInvCount">0</span>)</div>
+                <div id="discInventory" style="max-height:420px;overflow:auto"></div>
+            </div>
+        </div>
+    </div><!-- /tab-discover -->
+
+    <!-- ================================================================ -->
+    <!-- AUTHZ TAB                                                         -->
+    <!-- ================================================================ -->
+    <div id="tab-authz" class="tab-panel">
+        <div class="card">
+            <div class="card-title">🔓 Authorization Testing (BOLA / IDOR · privilege escalation)</div>
+            <div class="config-bar" style="border-left-color:var(--amber)">
+                <div class="config-item">⚠ Replays each request as every identity (GET only). Authorized targets only. Findings are candidates — verify manually.</div>
+            </div>
+            <form id="authzForm">
+                <div class="form-group">
+                    <label for="authzUrls">Target URLs <span style="font-weight:400;color:var(--muted)">(one per line — paste from the Discover tab's inventory)</span></label>
+                    <textarea id="authzUrls" rows="4" placeholder="https://app.example.com/api/account/101&#10;https://app.example.com/admin/users&#10;https://app.example.com/api/orders"
+                        style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:8px;font-family:monospace;font-size:.82em;resize:vertical"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Identities <span style="font-weight:400;color:var(--muted)">(add two or more; an anonymous identity is always included)</span></label>
+                    <div id="identityList"></div>
+                    <button type="button" class="btn btn-primary" style="font-size:.82em;padding:7px 14px;margin-top:4px" onclick="addIdentity()">+ Add identity</button>
+                </div>
+
+                <button type="submit" id="authzBtn" class="btn btn-primary">🔎 Run authorization matrix</button>
+            </form>
+            <div id="authzStatus" class="status-bar"></div>
+        </div>
+
+        <div id="authzResults" style="display:none">
+            <div class="card">
+                <div class="card-title">📊 Results</div>
+                <div id="authzSummary" class="summary-grid"></div>
+                <div id="authzDownloadBar" class="download-bar" style="display:none">
+                    <p>Access matrix</p>
+                    <div id="authzDownloadButtons"></div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-title">🔎 Findings</div>
+                <div id="authzFindingsList"></div>
+            </div>
+            <div class="card">
+                <div class="card-title">🧮 Access Matrix</div>
+                <div id="authzMatrix" style="max-height:440px;overflow:auto"></div>
+            </div>
+        </div>
+    </div><!-- /tab-authz -->
+
 </div><!-- /container -->
 
 <script>
@@ -384,6 +800,7 @@ function switchTab(name, btn) {
     document.getElementById('tab-' + name).classList.add('active');
     btn.classList.add('active');
     if (name === 'dashboard') loadDashboard();
+    if (name === 'tracker') loadTracker();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -406,103 +823,192 @@ function setStatus(id, ok, yes, no) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Scanner form
+// Scanner form — supports multiple simultaneous scans + batch URLs
 // ─────────────────────────────────────────────────────────────────────────────
+const activeJobs = [];
+let queuedUrls = [];
+
 document.getElementById('exportReptor').addEventListener('change', function() {
     document.getElementById('projectNameGroup').style.display = this.checked ? 'block' : 'none';
 });
 
-document.getElementById('scanForm').addEventListener('submit', async function(e) {
-    e.preventDefault();
-
-    const btn  = document.getElementById('scanBtn');
-    const bar  = document.getElementById('statusBar');
-
-    document.getElementById('resultsSection').style.display = 'none';
-
-    btn.disabled = true;
-    btn.innerHTML = '<div class="spinner"></div> Scanning…';
-    bar.className = 'status-bar active';
-    document.getElementById('statusSpinner').style.display = 'inline-block';
-    document.getElementById('statusText').textContent = 'Submitting scan request…';
-
-    const payload = {
-        url:                document.getElementById('targetUrl').value.trim(),
-        use_ai:             document.getElementById('useAI').checked,
-        export_to_sysreptor:document.getElementById('exportReptor').checked,
-        project_name:       document.getElementById('projectName').value.trim()
-    };
-
-    try {
-        // Step 1: kick off the job — returns immediately with a job_id
-        const kickoff = await fetch('/api/scan', {
-            method: 'POST',
-            headers: {'Content-Type':'application/json'},
-            body: JSON.stringify(payload)
-        });
-
-        if (!kickoff.ok) {
-            const err = await kickoff.json();
-            throw new Error(err.error || 'Failed to start scan');
-        }
-
-        const { job_id } = await kickoff.json();
-
-        // Step 2: poll for completion
-        await pollJob(job_id);
-
-    } catch(err) {
-        bar.className = 'status-bar active error';
-        document.getElementById('statusSpinner').style.display = 'none';
-        document.getElementById('statusText').textContent = '❌ ' + err.message;
-        btn.disabled = false;
-        btn.innerHTML = '🔍 Start Scan';
+function addUrlToList() {
+    const input = document.getElementById('targetUrl');
+    const url = input.value.trim();
+    if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+        if (!queuedUrls.includes(url)) { queuedUrls.push(url); renderUrlQueue(); }
+        input.value = '';
     }
+    input.focus();
+}
+
+document.getElementById('targetUrl').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); addUrlToList(); }
 });
 
-async function pollJob(job_id) {
-    const btn  = document.getElementById('scanBtn');
-    const bar  = document.getElementById('statusBar');
+function removeUrlFromQueue(index) { queuedUrls.splice(index, 1); renderUrlQueue(); }
 
-    while (true) {
-        await new Promise(r => setTimeout(r, 3000)); // poll every 3s
+function renderUrlQueue() {
+    const preview = document.getElementById('urlQueuePreview');
+    const list = document.getElementById('urlQueueList');
+    const count = document.getElementById('urlCount');
+    if (queuedUrls.length === 0) { preview.style.display = 'none'; return; }
+    preview.style.display = 'block';
+    count.textContent = queuedUrls.length;
+    list.innerHTML = queuedUrls.map((u, i) =>
+        `<span class="url-tag">${x(u)}<button onclick="removeUrlFromQueue(${i})">×</button></span>`
+    ).join('');
+}
 
-        let job;
+function onActiveScanChange() {
+    document.getElementById('activeOpts').style.display =
+        document.getElementById('activeScan').checked ? 'block' : 'none';
+}
+
+function onAuthTypeChange() {
+    const t = document.getElementById('authType').value;
+    document.getElementById('authBearerGroup').style.display   = t === 'bearer'   ? 'block' : 'none';
+    document.getElementById('authUserpassGroup').style.display = t === 'userpass' ? 'block' : 'none';
+}
+
+function collectAuth() {
+    const t = document.getElementById('authType').value;
+    if (t === 'bearer') {
+        return {
+            type: 'bearer',
+            token: document.getElementById('authToken').value.trim(),
+            header: document.getElementById('authHeader').value.trim()
+        };
+    }
+    if (t === 'userpass') {
+        return {
+            type: 'userpass',
+            login_url: document.getElementById('authLoginUrl').value.trim(),
+            username: document.getElementById('authUsername').value,
+            password: document.getElementById('authPassword').value,
+            username_field: document.getElementById('authUserField').value.trim(),
+            password_field: document.getElementById('authPassField').value.trim()
+        };
+    }
+    return { type: 'none' };
+}
+
+function validateAuth(auth) {
+    if (auth.type === 'bearer' && !auth.token) {
+        alert('Enter a bearer token, or set Authentication to None.'); return false;
+    }
+    if (auth.type === 'userpass') {
+        if (!auth.login_url || !(auth.login_url.startsWith('http://') || auth.login_url.startsWith('https://'))) {
+            alert('Enter a valid Login URL (http:// or https://).'); return false;
+        }
+        if (!auth.username || !auth.password) {
+            alert('Enter both a username and password for login authentication.'); return false;
+        }
+    }
+    return true;
+}
+
+function collectUrls() {
+    const urls = [...queuedUrls];
+    const single = document.getElementById('targetUrl').value.trim();
+    if (single && (single.startsWith('http://') || single.startsWith('https://')) && !urls.includes(single)) urls.push(single);
+    const bulk = document.getElementById('bulkUrls').value.trim();
+    if (bulk) {
+        bulk.split('\n').forEach(line => {
+            const u = line.trim();
+            if (u && (u.startsWith('http://') || u.startsWith('https://')) && !urls.includes(u)) urls.push(u);
+        });
+    }
+    return urls;
+}
+
+document.getElementById('scanForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const urls = collectUrls();
+    if (urls.length === 0) { alert('Please enter at least one URL to scan.'); return; }
+
+    const useAi = document.getElementById('useAI').checked;
+    const exportReptor = document.getElementById('exportReptor').checked;
+    const projectName = document.getElementById('projectName').value.trim();
+
+    const auth = collectAuth();
+    if (!validateAuth(auth)) return;
+
+    const active = document.getElementById('activeScan').checked;
+    const ajax = document.getElementById('ajaxSpider').checked;
+    const activeMinutes = parseInt(document.getElementById('activeMinutes').value, 10) || 20;
+
+    for (const url of urls) {
+        const payload = { url, use_ai: useAi, export_to_sysreptor: exportReptor, project_name: projectName,
+                          auth, active, ajax, active_minutes: activeMinutes };
+        try {
+            const kickoff = await fetch('/api/scan', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+            if (!kickoff.ok) {
+                const err = await kickoff.json();
+                activeJobs.unshift({ job_id:null, url, status:'error', progress:0, message:err.error||'Failed to start', result:null });
+                continue;
+            }
+            const { job_id } = await kickoff.json();
+            activeJobs.unshift({ job_id, url, status:'running', progress:0, message:'Queued…', result:null });
+            pollJobAsync(job_id);
+        } catch(err) {
+            activeJobs.unshift({ job_id:null, url, status:'error', progress:0, message:'Network error: '+err.message, result:null });
+        }
+    }
+    renderJobs();
+    queuedUrls = []; renderUrlQueue();
+    document.getElementById('targetUrl').value = '';
+    document.getElementById('bulkUrls').value = '';
+});
+
+function pollJobAsync(job_id) {
+    const poll = async () => {
         try {
             const res = await fetch(`/api/scan/status/${job_id}`);
-            job = await res.json();
+            const job = await res.json();
+            const entry = activeJobs.find(j => j.job_id === job_id);
+            if (!entry) return;
+            entry.status   = job.status;
+            entry.progress = job.progress || 0;
+            entry.message  = job.message  || '';
+            entry.result   = job.result   || null;
+            renderJobs();
+            if (job.status === 'running') setTimeout(poll, 3000);
         } catch(e) {
-            // transient network hiccup — keep trying
-            document.getElementById('statusText').textContent =
-                '⏳ Waiting for server response…';
-            continue;
+            setTimeout(poll, 5000);
         }
+    };
+    poll();
+}
 
-        // Update progress bar message
-        const pct  = job.progress || 0;
-        const msg  = job.message  || 'Working…';
-        document.getElementById('statusText').textContent =
-            `[${pct}%] ${msg}`;
+function renderJobs() {
+    const panel = document.getElementById('jobsPanel');
+    const list  = document.getElementById('jobsList');
+    if (activeJobs.length === 0) { panel.style.display = 'none'; return; }
+    panel.style.display = 'block';
+    list.innerHTML = activeJobs.map((j, i) => {
+        const statusClass = j.status === 'done' ? 'job-done' : j.status === 'error' ? 'job-error' : 'job-running';
+        const statusLabel = j.status === 'done' ? '✅ Done' : j.status === 'error' ? '❌ Failed' : `${j.progress}%`;
+        const clickAttr   = j.status === 'done' ? `onclick="viewJobResult(${i})"` : '';
+        const msg         = j.status !== 'done' ? `<div class="job-msg">${x(j.message)}</div>` : '';
+        return `
+        <div class="job-item" ${clickAttr}>
+            <div style="flex:1">
+                <div class="job-url">${x(j.url)}</div>
+                ${msg}
+            </div>
+            <span class="job-status ${statusClass}">${statusLabel}</span>
+            ${j.status === 'running' ? '<div class="spinner"></div>' : ''}
+        </div>`;
+    }).join('');
+}
 
-        if (job.status === 'done') {
-            showResults(job.result);
-            bar.className = 'status-bar active success';
-            document.getElementById('statusSpinner').style.display = 'none';
-            document.getElementById('statusText').textContent =
-                `✅ Scan complete — ${job.result.findings_count} finding(s) found`;
-            btn.disabled = false;
-            btn.innerHTML = '🔍 Start Scan';
-            return;
-        }
-
-        if (job.status === 'error') {
-            bar.className = 'status-bar active error';
-            document.getElementById('statusSpinner').style.display = 'none';
-            document.getElementById('statusText').textContent = '❌ ' + job.message;
-            btn.disabled = false;
-            btn.innerHTML = '🔍 Start Scan';
-            return;
-        }
+function viewJobResult(index) {
+    const job = activeJobs[index];
+    if (job && job.result) {
+        showResults(job.result);
+        document.getElementById('resultsSection').style.display = 'block';
+        document.getElementById('resultsSection').scrollIntoView({behavior:'smooth'});
     }
 }
 
@@ -700,6 +1206,524 @@ function x(str) {
     d.textContent = String(str || '');
     return d.innerHTML;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Vulnerability Tracker — grouped by URL
+// ─────────────────────────────────────────────────────────────────────────────
+let trackerFilter = 'all';
+
+async function loadTracker() {
+    try {
+        const params = trackerFilter !== 'all' ? `?status=${trackerFilter}` : '';
+        const d = await fetch('/api/tracker' + params).then(r => r.json());
+        renderTrackerStats(d.stats);
+        renderTrackerGrouped(d.vulnerabilities || []);
+    } catch(e) {
+        document.getElementById('trackerList').innerHTML = '<div class="card"><p style="color:var(--red)">Failed to load tracker.</p></div>';
+    }
+}
+
+function renderTrackerStats(stats) {
+    if (!stats) return;
+    document.getElementById('trackerStats').innerHTML = `
+        <div class="stat-card stat-dark"><div class="val">${stats.total||0}</div><div class="lbl">Total</div></div>
+        <div class="stat-card stat-green"><div class="val">${stats.open||0}</div><div class="lbl">Open</div></div>
+        <div class="stat-card stat-red"><div class="val">${stats.blocked||0}</div><div class="lbl">Blocked</div></div>
+        <div class="stat-card stat-amber"><div class="val">${stats.risk_accepted||0}</div><div class="lbl">Risk Accepted</div></div>
+        <div class="stat-card stat-blue"><div class="val">${stats.closed||0}</div><div class="lbl">Closed</div></div>
+    `;
+}
+
+function renderTrackerGrouped(vulns) {
+    const el = document.getElementById('trackerList');
+    if (!vulns.length) {
+        el.innerHTML = `<div class="card"><div class="empty-state"><div class="icon">📋</div><p>No vulnerabilities tracked yet. Run a scan to populate the tracker automatically.</p></div></div>`;
+        return;
+    }
+
+    // Group by URL
+    const groups = {};
+    vulns.forEach(v => {
+        const url = v.url || 'Unknown';
+        if (!groups[url]) groups[url] = [];
+        groups[url].push(v);
+    });
+
+    el.innerHTML = Object.entries(groups).map(([url, items], gi) => {
+        const counts = {high: 0, medium: 0, low: 0, info: 0, critical: 0};
+        let openCount = 0;
+        items.forEach(v => {
+            counts[v.severity || 'info']++;
+            if (v.status === 'open') openCount++;
+        });
+
+        const badges = [
+            counts.critical ? `<span class="url-group-count" style="background:#fee2e2;color:#b91c1c">${counts.critical}C</span>` : '',
+            counts.high     ? `<span class="url-group-count" style="background:#fee2e2;color:#b91c1c">${counts.high}H</span>` : '',
+            counts.medium   ? `<span class="url-group-count" style="background:#fff3cd;color:#92400e">${counts.medium}M</span>` : '',
+            counts.low      ? `<span class="url-group-count" style="background:#dbeafe;color:#1e40af">${counts.low}L</span>` : '',
+            counts.info     ? `<span class="url-group-count" style="background:#e0f2fe;color:#075985">${counts.info}I</span>` : '',
+        ].filter(Boolean).join('');
+
+        const vulnRows = items.map(v => {
+            const statusClass = 'status-' + (v.status || 'open');
+            return `
+            <div class="vuln-row" style="margin-top:10px">
+                <div class="vuln-header">
+                    <span class="sev-badge sev-${v.severity||'info'}">${v.severity||'info'}</span>
+                    <div class="vuln-title">${x(v.title)}</div>
+                    <span class="job-status ${statusClass}" style="font-size:.72em">${(v.status||'open').replace('_',' ')}</span>
+                </div>
+                ${v.description ? `<p style="font-size:.82em;color:var(--muted);margin-top:6px">${x(v.description).substring(0,150)}</p>` : ''}
+                <div class="vuln-actions">
+                    <select class="status-select" onchange="updateVuln('${v.id}','status',this.value)">
+                        <option value="open" ${v.status==='open'?'selected':''}>Open</option>
+                        <option value="closed" ${v.status==='closed'?'selected':''}>Closed</option>
+                        <option value="blocked" ${v.status==='blocked'?'selected':''}>Blocked</option>
+                        <option value="risk_accepted" ${v.status==='risk_accepted'?'selected':''}>Risk Accepted</option>
+                    </select>
+                    <input class="team-input" placeholder="Assign team…" value="${x(v.team||'')}"
+                        onchange="updateVuln('${v.id}','team',this.value)">
+                    <span style="font-size:.75em;color:var(--muted)">📅 ${v.date_reported||'—'}</span>
+                </div>
+            </div>`;
+        }).join('');
+
+        return `
+        <div class="url-group">
+            <div class="url-group-header" onclick="toggleUrlGroup(${gi})">
+                <div class="url-group-url">🔗 ${x(url)}</div>
+                <div class="url-group-badges">${badges}</div>
+                <span style="font-size:.82em;color:var(--green);font-weight:700">${openCount} open</span>
+                <span style="font-size:.82em;color:var(--muted)">${items.length} total</span>
+                <span class="url-group-toggle" id="tg-${gi}">▼</span>
+            </div>
+            <div class="url-group-body" id="tb-${gi}">
+                ${vulnRows}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function toggleUrlGroup(gi) {
+    const body   = document.getElementById('tb-' + gi);
+    const toggle = document.getElementById('tg-' + gi);
+    const header = toggle.closest('.url-group-header');
+    const isOpen = body.classList.contains('open');
+    body.classList.toggle('open');
+    toggle.classList.toggle('open');
+    header.classList.toggle('expanded');
+}
+
+function filterTracker(status, btn) {
+    trackerFilter = status;
+    document.querySelectorAll('#tab-tracker .filter-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    loadTracker();
+}
+
+async function updateVuln(id, field, value) {
+    await fetch(`/api/tracker/${id}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({[field]:value}) });
+    loadTracker();
+}
+
+async function deleteVuln(id) {
+    if (!confirm('Delete this vulnerability from the tracker?')) return;
+    await fetch(`/api/tracker/${id}`, { method:'DELETE' });
+    loadTracker();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// JWT analyzer
+// ─────────────────────────────────────────────────────────────────────────────
+let jwtFindings = [];
+
+document.getElementById('jwtForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const token = document.getElementById('jwtToken').value.trim();
+    if (!token) { alert('Paste a JWT to analyze.'); return; }
+
+    const payload = {
+        token,
+        wordlist: document.getElementById('jwtWordlist').value,
+        public_key: document.getElementById('jwtPubKey').value.trim(),
+        import_to_tracker: document.getElementById('jwtImportTracker').checked
+    };
+
+    const btn = document.getElementById('jwtBtn');
+    const status = document.getElementById('jwtStatus');
+    btn.disabled = true;
+    status.className = 'status-bar active';
+    status.innerHTML = '<div class="spinner"></div> Analyzing token locally…';
+
+    try {
+        const res = await fetch('/api/jwt-scan', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            status.className = 'status-bar active error';
+            status.textContent = data.error || 'Analysis failed';
+            return;
+        }
+        status.className = 'status-bar active success';
+        status.textContent = `Analyzed — ${data.findings_count} finding(s) for ${data.target}.`;
+        showJwtResults(data);
+    } catch (err) {
+        status.className = 'status-bar active error';
+        status.textContent = 'Network error: ' + err.message;
+    } finally {
+        btn.disabled = false;
+    }
+});
+
+function showJwtResults(data) {
+    jwtFindings = data.findings || [];
+    const c = data.counts || {high:0, medium:0, low:0, info:0};
+    document.getElementById('jwtSummary').innerHTML = `
+        <div class="stat-card stat-green"><div class="val">${data.findings_count}</div><div class="lbl">Total</div></div>
+        <div class="stat-card stat-red">  <div class="val">${c.high||0}</div>  <div class="lbl">High</div></div>
+        <div class="stat-card stat-amber"><div class="val">${c.medium||0}</div><div class="lbl">Medium</div></div>
+        <div class="stat-card stat-blue"> <div class="val">${c.low||0}</div>   <div class="lbl">Low</div></div>
+        <div class="stat-card stat-teal"> <div class="val">${c.info||0}</div>  <div class="lbl">Info</div></div>
+    `;
+    renderJwtFindings(jwtFindings);
+    document.getElementById('jwtResults').style.display = 'block';
+}
+
+function filterJwt(sev, btn) {
+    document.querySelectorAll('#tab-jwt .filter-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    renderJwtFindings(sev === 'all' ? jwtFindings : jwtFindings.filter(f => f.data.severity === sev));
+}
+
+function renderJwtFindings(list) {
+    const el = document.getElementById('jwtFindingsList');
+    if (!list.length) {
+        el.innerHTML = '<p style="text-align:center;padding:30px;color:var(--muted)">No findings in this category.</p>';
+        return;
+    }
+    el.innerHTML = list.map((f, i) => {
+        const d = f.data, sev = d.severity || 'info';
+        const aff = d.affected_components || [], refs = d.references || [];
+        return `
+        <div class="finding-item">
+            <div class="finding-header">
+                <span class="sev-badge sev-${sev}">${sev}</span>
+                <div class="finding-title">${x(d.title||'Untitled')}</div>
+                <button class="toggle-btn" onclick="toggleBody('jwtfb${i}',this)">▼ Expand</button>
+            </div>
+            <div id="jwtfb${i}" class="finding-body">
+                ${d.description ? `<div class="finding-section"><h4>Description</h4><p>${x(d.description)}</p></div>` : ''}
+                ${d.recommendation ? `<div class="finding-section"><h4>Recommendation</h4><p>${x(d.recommendation)}</p></div>` : ''}
+                ${aff.length ? `<div class="finding-section"><h4>Evidence</h4><ul class="affected-list">${aff.map(a=>`<li>${x(a)}</li>`).join('')}</ul></div>` : ''}
+                ${refs.length ? `<div class="finding-section"><h4>References</h4><ul class="affected-list">${refs.map(r=>`<li>${x(r)}</li>`).join('')}</ul></div>` : ''}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Endpoint discovery
+// ─────────────────────────────────────────────────────────────────────────────
+function onDiscAuthChange() {
+    const t = document.getElementById('discAuthType').value;
+    document.getElementById('discBearerGroup').style.display = t === 'bearer' ? 'block' : 'none';
+    document.getElementById('discCookieGroup').style.display = t === 'cookie' ? 'block' : 'none';
+}
+
+document.getElementById('discoverForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const url = document.getElementById('discTarget').value.trim();
+    if (!url || !(url.startsWith('http://') || url.startsWith('https://'))) {
+        alert('Enter a valid target URL (http:// or https://).'); return;
+    }
+    const authType = document.getElementById('discAuthType').value;
+    const payload = {
+        url,
+        openapi_url: document.getElementById('discOpenapi').value.trim(),
+        crawl: document.getElementById('discCrawl').checked,
+        probe: document.getElementById('discProbe').checked,
+        auth_type: authType,
+        token: authType === 'bearer' ? document.getElementById('discToken').value.trim() : '',
+        cookie: authType === 'cookie' ? document.getElementById('discCookie').value.trim() : ''
+    };
+
+    const btn = document.getElementById('discBtn');
+    const status = document.getElementById('discStatus');
+    btn.disabled = true;
+    status.className = 'status-bar active';
+    status.innerHTML = '<div class="spinner"></div> Starting discovery…';
+
+    try {
+        const res = await fetch('/api/discover', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            status.className = 'status-bar active error';
+            status.textContent = data.error || 'Failed to start';
+            btn.disabled = false;
+            return;
+        }
+        pollDiscover(data.job_id, btn, status);
+    } catch (err) {
+        status.className = 'status-bar active error';
+        status.textContent = 'Network error: ' + err.message;
+        btn.disabled = false;
+    }
+});
+
+function pollDiscover(jobId, btn, status) {
+    const poll = async () => {
+        try {
+            const job = await fetch(`/api/scan/status/${jobId}`).then(r => r.json());
+            if (job.status === 'running') {
+                status.innerHTML = `<div class="spinner"></div> ${x(job.message || 'Working…')}`;
+                setTimeout(poll, 2500);
+                return;
+            }
+            btn.disabled = false;
+            if (job.status === 'error') {
+                status.className = 'status-bar active error';
+                status.textContent = job.message || 'Discovery failed';
+                return;
+            }
+            status.className = 'status-bar active success';
+            status.textContent = `Done — ${job.result.findings_count} finding(s), ${job.result.inventory_count} endpoint(s).`;
+            showDiscoverResults(job.result);
+        } catch (e) {
+            setTimeout(poll, 4000);
+        }
+    };
+    poll();
+}
+
+function showDiscoverResults(result) {
+    const findings = result.findings || [];
+    const c = {high:0, medium:0, low:0, info:0};
+    findings.forEach(f => { c[f.data.severity||'info'] = (c[f.data.severity||'info']||0)+1; });
+
+    document.getElementById('discSummary').innerHTML = `
+        <div class="stat-card stat-dark"> <div class="val">${result.inventory_count}</div><div class="lbl">Endpoints</div></div>
+        <div class="stat-card stat-red">  <div class="val">${c.high}</div>  <div class="lbl">High</div></div>
+        <div class="stat-card stat-amber"><div class="val">${c.medium}</div><div class="lbl">Medium</div></div>
+        <div class="stat-card stat-blue"> <div class="val">${c.low}</div>   <div class="lbl">Low</div></div>
+        <div class="stat-card stat-teal"> <div class="val">${c.info}</div>  <div class="lbl">Info</div></div>
+    `;
+
+    if (result.scan_files && result.scan_files.inventory) {
+        const rel = result.scan_files.inventory.split('scans/').pop();
+        const href = rel.split('/').map(encodeURIComponent).join('/');
+        document.getElementById('discDownloadButtons').innerHTML =
+            `<a href="/api/download/${href}" target="_blank">📄 endpoints.json</a>`;
+        document.getElementById('discDownloadBar').style.display = 'block';
+    }
+
+    const fl = document.getElementById('discFindingsList');
+    fl.innerHTML = findings.map((f, i) => {
+        const d = f.data, sev = d.severity || 'info';
+        const aff = d.affected_components || [], refs = d.references || [];
+        return `
+        <div class="finding-item">
+            <div class="finding-header">
+                <span class="sev-badge sev-${sev}">${sev}</span>
+                <div class="finding-title">${x(d.title||'Untitled')}</div>
+                <button class="toggle-btn" onclick="toggleBody('dfb${i}',this)">▼ Expand</button>
+            </div>
+            <div id="dfb${i}" class="finding-body">
+                ${d.description ? `<div class="finding-section"><h4>Description</h4><p>${x(d.description)}</p></div>` : ''}
+                ${d.recommendation ? `<div class="finding-section"><h4>Recommendation</h4><p>${x(d.recommendation)}</p></div>` : ''}
+                ${aff.length ? `<div class="finding-section"><h4>Evidence</h4><ul class="affected-list">${aff.map(a=>`<li>${x(a)}</li>`).join('')}</ul></div>` : ''}
+                ${refs.length ? `<div class="finding-section"><h4>References</h4><ul class="affected-list">${refs.map(r=>`<li>${x(r)}</li>`).join('')}</ul></div>` : ''}
+            </div>
+        </div>`;
+    }).join('') || '<p style="color:var(--muted);padding:20px">No findings.</p>';
+
+    const inv = result.inventory || [];
+    document.getElementById('discInvCount').textContent = result.inventory_count || inv.length;
+    document.getElementById('discInventory').innerHTML = `
+        <table class="url-table">
+            <thead><tr><th>Method</th><th>URL</th><th>Source</th><th>Status</th></tr></thead>
+            <tbody>${inv.map(e => `
+                <tr>
+                    <td><span class="scan-count">${x(e.method||'GET')}</span></td>
+                    <td class="url-cell">${x(e.url||'')}</td>
+                    <td class="date-cell">${x(e.source||'')}</td>
+                    <td class="date-cell">${e.status != null ? e.status : '—'}</td>
+                </tr>`).join('')}</tbody>
+        </table>`;
+
+    document.getElementById('discResults').style.display = 'block';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Authorization testing (BOLA / IDOR / privilege escalation)
+// ─────────────────────────────────────────────────────────────────────────────
+let identitySeq = 0;
+
+function addIdentity(preset) {
+    preset = preset || {};
+    const id = ++identitySeq;
+    const wrap = document.createElement('div');
+    wrap.className = 'finding-item';
+    wrap.style.marginBottom = '10px';
+    wrap.id = 'ident-' + id;
+    wrap.innerHTML = `
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="text" placeholder="name (e.g. userA)" value="${x(preset.name||'')}" data-f="name" style="flex:1;min-width:120px">
+            <select data-f="role" style="width:140px">
+                <option value="user">user</option>
+                <option value="admin">admin</option>
+                <option value="anonymous">anonymous</option>
+                <option value="other">other</option>
+            </select>
+            <select data-f="authkind" style="width:130px" onchange="onIdentAuthKind(${id})">
+                <option value="bearer">Bearer token</option>
+                <option value="cookie">Cookie</option>
+                <option value="none">No creds</option>
+            </select>
+            <button type="button" class="btn btn-danger" onclick="document.getElementById('ident-${id}').remove()">✕</button>
+        </div>
+        <input type="password" placeholder="token / cookie value" data-f="secret" autocomplete="off" style="width:100%;margin-top:8px" id="identSecret-${id}">
+        <textarea rows="2" placeholder="owned object URLs (optional, one per line) — enables precise BOLA cross-checks" data-f="owned"
+            style="width:100%;margin-top:8px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-family:var(--mono);font-size:.78rem;resize:vertical"></textarea>
+    `;
+    document.getElementById('identityList').appendChild(wrap);
+    const roleSel = wrap.querySelector('[data-f="role"]');
+    if (preset.role) roleSel.value = preset.role;
+}
+
+function onIdentAuthKind(id) {
+    const wrap = document.getElementById('ident-' + id);
+    const kind = wrap.querySelector('[data-f="authkind"]').value;
+    const secret = document.getElementById('identSecret-' + id);
+    secret.style.display = kind === 'none' ? 'none' : 'block';
+    secret.placeholder = kind === 'cookie' ? 'Cookie header (session=...; ...)' : 'Bearer token';
+}
+
+function collectIdentities() {
+    const out = [];
+    document.querySelectorAll('#identityList .finding-item').forEach(w => {
+        const name = w.querySelector('[data-f="name"]').value.trim();
+        if (!name) return;
+        const role = w.querySelector('[data-f="role"]').value;
+        const kind = w.querySelector('[data-f="authkind"]').value;
+        const secret = w.querySelector('[data-f="secret"]').value.trim();
+        const owned = w.querySelector('[data-f="owned"]').value;
+        const ident = { name, role, owned };
+        if (kind === 'bearer' && secret) ident.token = secret;
+        if (kind === 'cookie' && secret) ident.cookie = secret;
+        out.push(ident);
+    });
+    return out;
+}
+
+document.getElementById('authzForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const urls = document.getElementById('authzUrls').value.split('\n').map(s => s.trim()).filter(Boolean);
+    if (!urls.length) { alert('Enter at least one target URL.'); return; }
+    const identities = collectIdentities();
+    if (!identities.length) { alert('Add at least one identity (besides anonymous).'); return; }
+
+    const btn = document.getElementById('authzBtn');
+    const status = document.getElementById('authzStatus');
+    btn.disabled = true;
+    status.className = 'status-bar active';
+    status.innerHTML = '<div class="spinner"></div> Running authorization matrix…';
+
+    try {
+        const res = await fetch('/api/authz', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ urls, identities })
+        });
+        const data = await res.json();
+        if (!res.ok) { status.className = 'status-bar active error'; status.textContent = data.error || 'Failed to start'; btn.disabled = false; return; }
+        pollAuthz(data.job_id, btn, status);
+    } catch (err) {
+        status.className = 'status-bar active error'; status.textContent = 'Network error: ' + err.message; btn.disabled = false;
+    }
+});
+
+function pollAuthz(jobId, btn, status) {
+    const poll = async () => {
+        try {
+            const job = await fetch(`/api/scan/status/${jobId}`).then(r => r.json());
+            if (job.status === 'running') {
+                status.innerHTML = `<div class="spinner"></div> ${x(job.message || 'Working…')}`;
+                setTimeout(poll, 2500); return;
+            }
+            btn.disabled = false;
+            if (job.status === 'error') { status.className = 'status-bar active error'; status.textContent = job.message || 'Failed'; return; }
+            status.className = 'status-bar active success';
+            status.textContent = `Done — ${job.result.findings_count} finding(s).`;
+            showAuthzResults(job.result);
+        } catch (e) { setTimeout(poll, 4000); }
+    };
+    poll();
+}
+
+function showAuthzResults(result) {
+    const findings = result.findings || [];
+    const c = {high:0, medium:0, low:0, info:0};
+    findings.forEach(f => { c[f.data.severity||'info'] = (c[f.data.severity||'info']||0)+1; });
+    document.getElementById('authzSummary').innerHTML = `
+        <div class="stat-card stat-red">  <div class="val">${c.high}</div>  <div class="lbl">High</div></div>
+        <div class="stat-card stat-amber"><div class="val">${c.medium}</div><div class="lbl">Medium</div></div>
+        <div class="stat-card stat-blue"> <div class="val">${c.low}</div>   <div class="lbl">Low</div></div>
+        <div class="stat-card stat-teal"> <div class="val">${c.info}</div>  <div class="lbl">Info</div></div>
+    `;
+
+    if (result.scan_files && result.scan_files.matrix) {
+        const rel = result.scan_files.matrix.split('scans/').pop();
+        const href = rel.split('/').map(encodeURIComponent).join('/');
+        document.getElementById('authzDownloadButtons').innerHTML = `<a href="/api/download/${href}" target="_blank">📄 authz-matrix.json</a>`;
+        document.getElementById('authzDownloadBar').style.display = 'block';
+    }
+
+    document.getElementById('authzFindingsList').innerHTML = findings.map((f, i) => {
+        const d = f.data, sev = d.severity || 'info';
+        const aff = d.affected_components || [], refs = d.references || [];
+        return `
+        <div class="finding-item">
+            <div class="finding-header">
+                <span class="sev-badge sev-${sev}">${sev}</span>
+                <div class="finding-title">${x(d.title||'Untitled')}</div>
+                <button class="toggle-btn" onclick="toggleBody('azfb${i}',this)">▼ Expand</button>
+            </div>
+            <div id="azfb${i}" class="finding-body">
+                ${d.description ? `<div class="finding-section"><h4>Description</h4><p>${x(d.description)}</p></div>` : ''}
+                ${d.recommendation ? `<div class="finding-section"><h4>Recommendation</h4><p>${x(d.recommendation)}</p></div>` : ''}
+                ${aff.length ? `<div class="finding-section"><h4>Evidence</h4><ul class="affected-list">${aff.map(a=>`<li>${x(a)}</li>`).join('')}</ul></div>` : ''}
+                ${refs.length ? `<div class="finding-section"><h4>References</h4><ul class="affected-list">${refs.map(r=>`<li>${x(r)}</li>`).join('')}</ul></div>` : ''}
+            </div>
+        </div>`;
+    }).join('') || '<p style="color:var(--muted);padding:20px">No findings.</p>';
+
+    const matrix = result.matrix || [];
+    const idents = matrix.length ? Object.keys(matrix[0].cells) : [];
+    document.getElementById('authzMatrix').innerHTML = `
+        <table class="url-table">
+            <thead><tr><th>Method</th><th>URL</th>${idents.map(n => `<th>${x(n)}</th>`).join('')}</tr></thead>
+            <tbody>${matrix.map(row => `
+                <tr>
+                    <td><span class="scan-count">${x(row.method)}</span></td>
+                    <td class="url-cell">${x(row.url)}</td>
+                    ${idents.map(n => {
+                        const code = row.cells[n];
+                        const ok = typeof code === 'number' && code >= 200 && code < 300;
+                        const color = ok ? 'var(--green)' : (code === 401 || code === 403 ? 'var(--muted)' : 'var(--amber)');
+                        return `<td style="font-weight:700;color:${color}">${x(String(code))}</td>`;
+                    }).join('')}
+                </tr>`).join('')}</tbody>
+        </table>`;
+
+    document.getElementById('authzResults').style.display = 'block';
+}
+
+// seed two identity rows
+addIdentity({ name: 'userA', role: 'user' });
+addIdentity({ name: 'userB', role: 'user' });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Init

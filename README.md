@@ -1,4 +1,4 @@
-# Letshego Group Security Scanner
+# Security Scanner
 
 A unified web application for automated security scanning with ZAP, AI-powered finding enrichment, SysReptor integration, and vulnerability tracking across your organization.
 
@@ -12,7 +12,6 @@ A unified web application for automated security scanning with ZAP, AI-powered f
 - **🤖 AI Enrichment** — Leverage Google Gemini to generate developer-focused descriptions and actionable remediation steps
 - **📤 SysReptor Integration** — Automatically create projects and push findings to your SysReptor instance
 - **📊 Dashboard** — Track vulnerabilities across all scanned URLs with deduplication and historical tracking
-- **🎨 Letshego Branding** — Professionally styled UI with Letshego Africa Holdings Limited brand colors and logo
 
 ---
 
@@ -185,8 +184,6 @@ scrappy-scanner/
 ├── app.py                 # Flask backend (scanner, parser, exporter, dashboard)
 ├── templates/
 │   └── index.html         # Web UI (tabs, forms, results rendering)
-├── images/
-│   └── LHL-Logo.png       # Letshego Group branding logo
 ├── docs/
 │   └── architecture.svg   # Architecture diagram
 ├── scans/                 # ZAP scan outputs (gitignored)
@@ -290,5 +287,3 @@ MIT License
 ## Credits
 
 Built with [Flask](https://flask.palletsprojects.com/), [OWASP ZAP](https://www.zaproxy.org/), [Google Gemini](https://ai.google.dev/), and [SysReptor](https://sysreptor.com/).
-
-Developed for **Letshego Africa Holdings Limited** — Group Information Security.

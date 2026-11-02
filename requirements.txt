@@ -1,4 +1,18 @@
-flask==3.1.1
+# ---------------------------------------------------------------------------
+# Direct dependencies (pinned to tested, patched versions)
+# ---------------------------------------------------------------------------
+flask==3.1.3              # security: fixes CVE-2026-27205 (needs >= 3.1.3)
+werkzeug==3.1.9           # security: latest patch (safe_join path-traversal fixes)
 google-generativeai>=0.8.5
-werkzeug==3.1.8
 reptor>=0.34
+PyYAML>=6.0               # ZAP Automation Framework plan generation (authenticated scans)
+
+# ---------------------------------------------------------------------------
+# Security floors for transitive dependencies — ensure a fresh install can only
+# resolve patched versions (all satisfied by the current environment).
+# ---------------------------------------------------------------------------
+Jinja2>=3.1.6            # security: fixes CVE-2025-27516
+MarkupSafe>=3.0.2
+requests>=2.32.4         # security: fixes CVE-2024-47081 (.netrc credential leak)
+urllib3>=2.5.0           # security: redirect/proxy header handling fixes
+certifi>=2024.7.4        # up-to-date CA trust bundle

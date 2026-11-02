@@ -1,5 +1,5 @@
 [Unit]
-Description=Letshego Group Security Scanner
+Description=Security Scanner
 After=network.target docker.service
 
 [Service]
@@ -11,6 +11,12 @@ ExecStart=/usr/bin/python /home/ec2-user/scrappy-scanner/app.py
 Restart=always
 RestartSec=5
 Environment=PATH=/usr/local/bin:/usr/bin:/bin:/home/ec2-user/scrappy-scanner/.venv/bin
+# The app binds to loopback by default. Expose it on this host explicitly.
+# NOTE: this service has no built-in authentication — restrict access with a
+# reverse proxy, security group, or firewall rather than opening 0.0.0.0 publicly.
+Environment=HOST=0.0.0.0
+Environment=PORT=8000
+# Leave debug OFF in production. Do not set FLASK_DEBUG here.
 
 [Install]
 WantedBy=multi-user.target
